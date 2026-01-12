@@ -217,6 +217,9 @@ int main(int argc, char** args)
         if (fabs(rx) > 0.1f || fabs(ry) > 0.1f)
             INFO("Right stick: (%.2f, %.2f)", rx, ry);
 
+        if (device_button(GP_BTN_START))
+            device_close();
+
         pos[0] += lx * elapsed;
         pos[0] = fmin(fmax(pos[0], -1.f), 1.f);
         pos[1] -= ly * elapsed;
