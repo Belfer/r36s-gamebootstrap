@@ -25,7 +25,7 @@ using f64 = double;
 #define INFO(fmt, ...) { printf("[INFO] " fmt "\n", ##__VA_ARGS__); }
 #define WARN(fmt, ...) { printf("[WARN] " fmt "\n", ##__VA_ARGS__); }
 #define ERROR(fmt, ...) { printf("[ERROR] " fmt "\n", ##__VA_ARGS__); exit(1); }
-#define FAIL_CHECK(cond, fmt, ...) { if (cond) { printf("[FAIL] !(" #cond ") " fmt "\n", ##__VA_ARGS__); exit(1); } }
+#define FAIL_CHECK(cond, fmt, ...) { if (cond) { printf("[FAIL] (" #cond ") " fmt "\n", ##__VA_ARGS__); exit(1); } }
 
 #define GP_BTN_A		0x00
 #define GP_BTN_B		0x01

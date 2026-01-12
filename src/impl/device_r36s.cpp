@@ -374,7 +374,7 @@ bool device_init(const config_t& config)
     if (!display_init(config.display_vsync))
         return false;
 
-    if (!audio_init(config.audio_sample_rate, config.audio_channels, config.audio_audio_callback, config.audio_userdata))
+    if (!audio_init(config.audio_sample_rate, config.audio_channels, config.audio_callback, config.audio_userdata))
         return false;
 
     if (!input_init())
