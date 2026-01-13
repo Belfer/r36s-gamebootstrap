@@ -8,7 +8,7 @@ target_include_directories(glad PUBLIC "glad/include")
 
 if(WIN32)
     add_subdirectory(glfw)
-    target_link_libraries(extern_deps INTERFACE glfw glad)
+    target_link_libraries(extern_deps INTERFACE glfw glad winmm)
 
 else()
     find_package(PkgConfig REQUIRED)

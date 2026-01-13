@@ -6,8 +6,6 @@
 #include <time.h>
 #include <linux/input.h>
 #include <alsa/asoundlib.h>
-#include <pthread.h>
-#include <signal.h>
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
@@ -15,86 +13,84 @@
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 
+#include <vector>
+#include <thread>
+#include <atomic>
+#include <cassert>
+
 // Timing
-static struct timespec start_ts;
+static struct timespec device_start_ts;
 
 // Display
-static i32 drm_fd;
-static drmModeRes* res;
-static drmModeConnector* conn;
-static drmModeModeInfo mode;
-static drmModeEncoder* enc;
-static gbm_device* gbm;
-static gbm_surface* surface;
-static EGLDisplay egl_display;
-static EGLContext context;
-static EGLSurface egl_surface;
-static struct gbm_bo* previous_bo;
-static u32 previous_fb;
-static bool should_close;
+static i32 display_drm_fd;
+static drmModeRes* display_drm_res = nullptr;
+static drmModeConnector* display_drm_conn = nullptr;
+static drmModeModeInfo display_drm_mode;
+static drmModeEncoder* display_drm_enc = nullptr;
+static gbm_device* display_gbm = nullptr;
+static gbm_surface* display_gbm_surface = nullptr;
+static EGLDisplay display_egl_display;
+static EGLContext display_egl_context;
+static EGLSurface display_egl_surface;
+static struct gbm_bo* display_gbm_previous_bo = nullptr;
+static u32 display_gbm_previous_fb = 0;
+static bool display_should_close = false;
 
-static void page_flip_handler(i32 fd, u32 frame, u32 sec, u32 usec, u32 crtc_id, void* data)
+static void page_flip_handler(i32, u32, u32, u32, u32, void* data)
 {
-    i32* flip_done = (i32*)data;
+    auto* flip_done = reinterpret_cast<i32*>(data);
     *flip_done = 1;
 }
 
-static i32 glad_init();
-
 static bool display_init(bool vsync)
 {
-    INFO("Opening DRM device...");
-    drm_fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
-    FAIL_CHECK(drm_fd < 0, "open /dev/dri/card0");
-    INFO("[OK] DRM fd=%d", drm_fd);
+    LOG_INFO("Opening DRM device...");
+    display_drm_fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
+    ASSERT(display_drm_fd >= 0, "Failed to open DRM device");
 
-    INFO("Querying DRM resources...");
-    res = drmModeGetResources(drm_fd);
-    FAIL_CHECK(!res, "drmModeGetResources");
-    INFO("[OK] DRM resources found");
+    LOG_INFO("Querying DRM resources...");
+    display_drm_res = drmModeGetResources(display_drm_fd);
+    ASSERT(display_drm_res != nullptr, "Failed to get DRM resources");
 
-    INFO("Searching for connected connector...\n");
-    conn = nullptr;
-    for (i32 i = 0; i < res->count_connectors; i++)
+    LOG_INFO("Searching for connected display connector...");
+    display_drm_conn = nullptr;
+    for (i32 i = 0; i < display_drm_res->count_connectors; ++i)
     {
-        conn = drmModeGetConnector(drm_fd, res->connectors[i]);
-        if (conn && conn->connection == DRM_MODE_CONNECTED && conn->count_modes > 0)
+        display_drm_conn = drmModeGetConnector(display_drm_fd, display_drm_res->connectors[i]);
+        if (display_drm_conn && display_drm_conn->connection == DRM_MODE_CONNECTED && display_drm_conn->count_modes > 0)
             break;
-        drmModeFreeConnector(conn);
-        conn = nullptr;
+        drmModeFreeConnector(display_drm_conn);
+        display_drm_conn = nullptr;
     }
+    ASSERT(display_drm_conn != nullptr, "No connected connector found");
 
-    FAIL_CHECK(!conn, "No connected connector");
-    mode = conn->modes[0];
-    INFO("[OK] Connector %u, mode %dx%d", conn->connector_id, mode.hdisplay, mode.vdisplay);
+    display_drm_mode = display_drm_conn->modes[0];
+    LOG_INFO("Using connector %u with resolution %dx%d", display_drm_conn->connector_id, display_drm_mode.hdisplay, display_drm_mode.vdisplay);
 
-    INFO("Getting encoder...");
-    enc = drmModeGetEncoder(drm_fd, conn->encoder_id);
-    FAIL_CHECK(!enc, "drmModeGetEncoder");
-    INFO("[OK] Encoder %u, CRTC %u", enc->encoder_id, enc->crtc_id);
+    LOG_INFO("Getting encoder...");
+    display_drm_enc = drmModeGetEncoder(display_drm_fd, display_drm_conn->encoder_id);
+    ASSERT(display_drm_enc != nullptr, "Failed to get DRM encoder");
 
-    INFO("Creating GBM device...");
-    gbm = gbm_create_device(drm_fd);
-    FAIL_CHECK(!gbm, "gbm_create_device");
-    INFO("[OK] GBM device created");
+    LOG_INFO("Creating GBM device...");
+    display_gbm = gbm_create_device(display_drm_fd);
+    ASSERT(display_gbm != nullptr, "Failed to create GBM device");
 
-    INFO("Creating GBM surface...");
-    surface = gbm_surface_create(gbm, mode.hdisplay, mode.vdisplay,
-        GBM_FORMAT_XRGB8888, GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
-    FAIL_CHECK(!surface, "gbm_surface_create");
-    INFO("[OK] GBM surface %dx%d", mode.hdisplay, mode.vdisplay);
+    LOG_INFO("Creating GBM display_gbm_surface...");
+    display_gbm_surface = gbm_surface_create(display_gbm, display_drm_mode.hdisplay, display_drm_mode.vdisplay,
+        GBM_FORMAT_XRGB8888,
+        GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+    ASSERT(display_gbm_surface != nullptr, "Failed to create GBM display_gbm_surface");
 
-    INFO("Initializing EGL...");
-    egl_display = eglGetDisplay((EGLNativeDisplayType)gbm);
-    FAIL_CHECK(egl_display == EGL_NO_DISPLAY, "eglGetDisplay");
+    LOG_INFO("Initializing EGL...");
+    display_egl_display = eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(display_gbm));
+    ASSERT(display_egl_display != EGL_NO_DISPLAY, "eglGetDisplay failed");
 
-    bool eglInit = eglInitialize(egl_display, nullptr, nullptr);
-    FAIL_CHECK(!eglInit, "eglInitialize");
-    INFO("[OK] EGL initialized");
+    bool eglInit = eglInitialize(display_egl_display, nullptr, nullptr);
+    ASSERT(eglInit, "eglInitialize failed");
 
-    INFO("EGL Vendor: %s", eglQueryString(egl_display, EGL_VENDOR));
-    INFO("EGL Version: %s", eglQueryString(egl_display, EGL_VERSION));
-    INFO("EGL Extensions:\n%s", eglQueryString(egl_display, EGL_EXTENSIONS));
+    LOG_INFO("EGL initialized: vendor=%s, version=%s",
+        eglQueryString(display_egl_display, EGL_VENDOR),
+        eglQueryString(display_egl_display, EGL_VERSION));
 
     static const EGLint cfg[] = {
         EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -106,181 +102,163 @@ static bool display_init(bool vsync)
     };
     EGLConfig config;
     EGLint num;
-    eglChooseConfig(egl_display, cfg, &config, 1, &num);
-    INFO("[OK] EGL config chosen (%d configs)", num);
+    eglChooseConfig(display_egl_display, cfg, &config, 1, &num);
+    LOG_INFO("EGL config chosen (%d configs available)", num);
 
     static const EGLint ctx[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
-    context = eglCreateContext(egl_display, config, EGL_NO_CONTEXT, ctx);
-    FAIL_CHECK(context == EGL_NO_CONTEXT, "eglCreateContext");
-    INFO("[OK] EGL context created");
+    display_egl_context = eglCreateContext(display_egl_display, config, EGL_NO_CONTEXT, ctx);
+    ASSERT(display_egl_context != EGL_NO_CONTEXT, "eglCreateContext failed");
 
-    egl_surface = eglCreateWindowSurface(egl_display, config, (EGLNativeWindowType)surface, nullptr);
-    FAIL_CHECK(egl_surface == EGL_NO_SURFACE, "eglCreateWindowSurface");
+    display_egl_surface = eglCreateWindowSurface(display_egl_display, config, reinterpret_cast<EGLNativeWindowType>(display_gbm_surface), nullptr);
+    ASSERT(display_egl_surface != EGL_NO_SURFACE, "eglCreateWindowSurface failed");
 
-    eglMakeCurrent(egl_display, egl_surface, egl_surface, context);
-    INFO("[OK] EGL context made current");
+    eglMakeCurrent(display_egl_display, display_egl_surface, display_egl_surface, display_egl_context);
+    LOG_INFO("EGL context made current");
 
-    INFO("GL Vendor: %s", glGetString(GL_VENDOR));
-    INFO("GL Renderer: %s", glGetString(GL_RENDERER));
-    INFO("GL Version: %s", glGetString(GL_VERSION));
-    INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
-    INFO("GL Extensions:\n%s", glGetString(GL_EXTENSIONS));
+    eglSwapInterval(display_egl_display, vsync ? 1 : 0);
 
-    eglSwapInterval(egl_display, vsync);
+    display_gbm_previous_bo = nullptr;
+    display_gbm_previous_fb = 0;
 
-    previous_bo = nullptr;
-    previous_fb = 0;
+    LOG_INFO("Initializing GLAD...");
+    if (!gladLoadGLES2Loader(reinterpret_cast<GLADloadproc>(eglGetProcAddress)))
+        LOG_ERROR("Failed to initialize GLAD");
+    else
+        LOG_INFO("GLAD initialized");
 
-    INFO("Initializing GLAD...");
-    if (!glad_init())
-        ERROR("Failed to initialize GLAD");
-    INFO("[OK] GLAD initialized.");
-
-    should_close = false;
+    display_should_close = false;
     return true;
 }
 
 static void display_shutdown()
 {
-    if (previous_bo)
+    if (display_gbm_previous_bo)
     {
-        gbm_surface_release_buffer(surface, previous_bo);
-        drmModeRmFB(drm_fd, previous_fb);
+        gbm_surface_release_buffer(display_gbm_surface, display_gbm_previous_bo);
+        drmModeRmFB(display_drm_fd, display_gbm_previous_fb);
     }
 
-    eglDestroySurface(egl_display, egl_surface);
-    eglDestroyContext(egl_display, context);
-    eglTerminate(egl_display);
-    gbm_surface_destroy(surface);
-    gbm_device_destroy(gbm);
-    drmModeFreeEncoder(enc);
-    drmModeFreeConnector(conn);
-    drmModeFreeResources(res);
-    close(drm_fd);
+    eglDestroySurface(display_egl_display, display_egl_surface);
+    eglDestroyContext(display_egl_display, display_egl_context);
+    eglTerminate(display_egl_display);
+    gbm_surface_destroy(display_gbm_surface);
+    gbm_device_destroy(display_gbm);
+    drmModeFreeEncoder(display_drm_enc);
+    drmModeFreeConnector(display_drm_conn);
+    drmModeFreeResources(display_drm_res);
+    close(display_drm_fd);
 }
 
 static void display_present()
 {
-    eglSwapBuffers(egl_display, egl_surface);
-    struct gbm_bo* bo = gbm_surface_lock_front_buffer(surface);
-    if (bo)
+    eglSwapBuffers(display_egl_display, display_egl_surface);
+    struct gbm_bo* bo = gbm_surface_lock_front_buffer(display_gbm_surface);
+    if (!bo) return;
+
+    u32 handle = gbm_bo_get_handle(bo).u32;
+    u32 stride = gbm_bo_get_stride(bo);
+    u32 fb;
+
+    if (!drmModeAddFB(display_drm_fd, display_drm_mode.hdisplay, display_drm_mode.vdisplay, 24, 32, stride, handle, &fb))
     {
-        u32 handle = gbm_bo_get_handle(bo).u32;
-        u32 stride = gbm_bo_get_stride(bo);
-        u32 fb;
+        i32 flip_done = 0;
+        drmModePageFlip(display_drm_fd, display_drm_enc->crtc_id, fb, DRM_MODE_PAGE_FLIP_EVENT, &flip_done);
+        drmEventContext evctx = { DRM_EVENT_CONTEXT_VERSION, nullptr, nullptr, page_flip_handler };
 
-        if (!drmModeAddFB(drm_fd, mode.hdisplay, mode.vdisplay, 24, 32, stride, handle, &fb))
+        while (!flip_done)
         {
-            i32 flip_done = 0;
-            drmModePageFlip(drm_fd, enc->crtc_id, fb, DRM_MODE_PAGE_FLIP_EVENT, &flip_done);
-            drmEventContext evctx = { DRM_EVENT_CONTEXT_VERSION, nullptr, nullptr, page_flip_handler };
-
-            while (!flip_done)
-            {
-                fd_set fds;
-                FD_ZERO(&fds);
-                FD_SET(drm_fd, &fds);
-                select(drm_fd + 1, &fds, nullptr, nullptr, nullptr);
-                drmHandleEvent(drm_fd, &evctx);
-            }
-
-            if (previous_bo)
-            {
-                gbm_surface_release_buffer(surface, previous_bo);
-                drmModeRmFB(drm_fd, previous_fb);
-            }
-            previous_bo = bo;
-            previous_fb = fb;
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(display_drm_fd, &fds);
+            select(display_drm_fd + 1, &fds, nullptr, nullptr, nullptr);
+            drmHandleEvent(display_drm_fd, &evctx);
         }
-        else
+
+        if (display_gbm_previous_bo)
         {
-            gbm_surface_release_buffer(surface, bo);
+            gbm_surface_release_buffer(display_gbm_surface, display_gbm_previous_bo);
+            drmModeRmFB(display_drm_fd, display_gbm_previous_fb);
         }
+        display_gbm_previous_bo = bo;
+        display_gbm_previous_fb = fb;
+    }
+    else
+    {
+        gbm_surface_release_buffer(display_gbm_surface, bo);
     }
 }
 
 // Audio
-#define PCM_DEVICE "default"
-#define PCM_FRAMES 256
-
-static snd_pcm_t* pcm;
+static snd_pcm_t* pcm = nullptr;
 static u32 audio_sample_rate;
 static i32 audio_channels;
-static pthread_t audio_thread;
+static i32 audio_frame_count;
+static std::thread audio_thread;
 static config_t::audio_callback_t audio_callback;
-static void* audio_userdata;
-static volatile sig_atomic_t audio_running = 0;
+static void* audio_userdata = nullptr;
+static std::atomic<bool> audio_running(false);
 
-static void* audio_thread_func(void* arg)
+static void audio_thread_func()
 {
-    i16* buffer = new i16[PCM_FRAMES * audio_channels];
+    std::vector<i16> buffer(audio_frame_count * audio_channels);
 
     while (audio_running)
     {
-        audio_callback(buffer, PCM_FRAMES, audio_userdata);
-
-        i32 rc = snd_pcm_writei(pcm, buffer, PCM_FRAMES);
-        if (rc < 0)
-            snd_pcm_prepare(pcm); // recover from underrun
+        audio_callback(buffer.data(), audio_frame_count, audio_userdata);
+        i32 rc = snd_pcm_writei(pcm, buffer.data(), audio_frame_count);
+        if (rc < 0) snd_pcm_prepare(pcm);
     }
 
     snd_pcm_drain(pcm);
-    return NULL;
 }
 
-static bool audio_init(u32 sample_rate, i32 channels, config_t::audio_callback_t callback, void* userdata)
+static bool audio_init(u32 sample_rate, i32 channels, i32 frame_count,
+    config_t::audio_callback_t cb, void* userdata)
 {
-    INFO("Initializing audio...");
-    if (callback == nullptr)
-        return false;
+    LOG_INFO("Initializing audio subsystem...");
+    ASSERT(cb != nullptr, "Audio callback is null");
 
-    if (snd_pcm_open(&pcm, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0) < 0)
-        return false;
+    i32 rc = snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
+    ASSERT(rc >= 0, "Failed to open audio device");
 
     snd_pcm_hw_params_t* hw;
     snd_pcm_hw_params_alloca(&hw);
-
     snd_pcm_hw_params_any(pcm, hw);
     snd_pcm_hw_params_set_access(pcm, hw, SND_PCM_ACCESS_RW_INTERLEAVED);
     snd_pcm_hw_params_set_format(pcm, hw, SND_PCM_FORMAT_S16_LE);
     snd_pcm_hw_params_set_channels(pcm, hw, channels);
+    snd_pcm_hw_params_set_rate_near(pcm, hw, &sample_rate, nullptr);
 
-    snd_pcm_hw_params_set_rate_near(pcm, hw, &sample_rate, 0);
+    snd_pcm_uframes_t period = frame_count;
+    snd_pcm_uframes_t buffer_size = period * 4;
+    snd_pcm_hw_params_set_period_size_near(pcm, hw, &period, nullptr);
+    snd_pcm_hw_params_set_buffer_size_near(pcm, hw, &buffer_size);
 
-    snd_pcm_uframes_t period = PCM_FRAMES;
-    snd_pcm_uframes_t buffer = period * 4;
+    rc = snd_pcm_hw_params(pcm, hw);
+    ASSERT(rc == 0, "Failed to set audio hardware params");
 
-    snd_pcm_hw_params_set_period_size_near(pcm, hw, &period, 0);
-    snd_pcm_hw_params_set_buffer_size_near(pcm, hw, &buffer);
-
-    if (snd_pcm_hw_params(pcm, hw) > 0)
-    {
-        //fprintf(stderr, "snd_pcm_hw_params: %s\n", snd_strerror(rc));
-        snd_pcm_close(pcm);
-        pcm = nullptr;
-        return false;
-    }
     snd_pcm_prepare(pcm);
 
     audio_sample_rate = sample_rate;
     audio_channels = channels;
-    audio_callback = callback;
+    audio_frame_count = frame_count;
+    audio_callback = cb;
     audio_userdata = userdata;
 
-    audio_running = 1;
-    pthread_create(&audio_thread, nullptr, audio_thread_func, nullptr);
+    audio_running = true;
+    audio_thread = std::thread(audio_thread_func);
 
-    INFO("[OK] Audio initialized.");
+    LOG_INFO("Audio subsystem initialized");
     return true;
 }
 
 static void audio_shutdown()
 {
-    if (!audio_running)
-        return;
+    if (!audio_running) return;
 
-    audio_running = 0;
-    pthread_join(audio_thread, nullptr);
+    audio_running = false;
+    if (audio_thread.joinable())
+        audio_thread.join();
 
     snd_pcm_close(pcm);
     pcm = nullptr;
@@ -288,50 +266,49 @@ static void audio_shutdown()
 
 // Input
 static i32 gp_fd;
-static bool buttons[GP_BTN_COUNT];
-static f32 axes[GP_AXIS_COUNT];
+static bool buttons[GP_BTN_COUNT] = { false };
+static f32 axes[GP_AXIS_COUNT] = { 0.0f };
 
 static i32 map_button(i32 code)
 {
     switch (code)
     {
-    case BTN_EAST:              return GP_BTN_A;
-    case BTN_SOUTH:             return GP_BTN_B;
-    case BTN_NORTH:             return GP_BTN_X;
-    case BTN_WEST:              return GP_BTN_Y;
-    case BTN_TL:                return GP_BTN_L1;
-    case BTN_TL2:               return GP_BTN_L2;
-    case BTN_TRIGGER_HAPPY3:    return GP_BTN_L3;
-    case BTN_TR:                return GP_BTN_R1;
-    case BTN_TR2:               return GP_BTN_R2;
-    case BTN_TRIGGER_HAPPY4:    return GP_BTN_R3;
-    case BTN_TRIGGER_HAPPY1:    return GP_BTN_SELECT;
-    case BTN_TRIGGER_HAPPY2:    return GP_BTN_START;
-    case BTN_TRIGGER_HAPPY5:    return GP_BTN_MODE;
-    case BTN_DPAD_UP:           return GP_BTN_UP;
-    case BTN_DPAD_DOWN:         return GP_BTN_DOWN;
-    case BTN_DPAD_LEFT:         return GP_BTN_LEFT;
-    case BTN_DPAD_RIGHT:        return GP_BTN_RIGHT;
+    case BTN_EAST: return GP_BTN_A;
+    case BTN_SOUTH: return GP_BTN_B;
+    case BTN_NORTH: return GP_BTN_X;
+    case BTN_WEST: return GP_BTN_Y;
+    case BTN_TL: return GP_BTN_L1;
+    case BTN_TL2: return GP_BTN_L2;
+    case BTN_TRIGGER_HAPPY3: return GP_BTN_L3;
+    case BTN_TR: return GP_BTN_R1;
+    case BTN_TR2: return GP_BTN_R2;
+    case BTN_TRIGGER_HAPPY4: return GP_BTN_R3;
+    case BTN_TRIGGER_HAPPY1: return GP_BTN_SELECT;
+    case BTN_TRIGGER_HAPPY2: return GP_BTN_START;
+    case BTN_TRIGGER_HAPPY5: return GP_BTN_MODE;
+    case BTN_DPAD_UP: return GP_BTN_UP;
+    case BTN_DPAD_DOWN: return GP_BTN_DOWN;
+    case BTN_DPAD_LEFT: return GP_BTN_LEFT;
+    case BTN_DPAD_RIGHT: return GP_BTN_RIGHT;
+    default: return -1;
     }
-    return -1;
 }
 
 static i32 map_axis(i32 code)
 {
     switch (code)
     {
-    case ABS_X:     return GP_AXIS_LX;
-    case ABS_Y:     return GP_AXIS_LY;
-    case ABS_RX:    return GP_AXIS_RX;
-    case ABS_RY:    return GP_AXIS_RY;
+    case ABS_X: return GP_AXIS_LX;
+    case ABS_Y: return GP_AXIS_LY;
+    case ABS_RX: return GP_AXIS_RX;
+    case ABS_RY: return GP_AXIS_RY;
+    default: return -1;
     }
-    return -1;
 }
 
 static f32 normalize_axis(i32 value, i32 min, i32 max)
 {
-    f32 f = (f32)(value - min) / (f32)(max - min);
-    return f * 2.0f - 1.0f;
+    return (static_cast<f32>(value - min) / (max - min)) * 2.0f - 1.0f;
 }
 
 static void input_poll()
@@ -342,25 +319,23 @@ static void input_poll()
         if (ev.type == EV_KEY)
         {
             i32 b = map_button(ev.code);
-            if (b >= 0)
-                buttons[b] = (ev.value != 0);
+            if (b >= 0) buttons[b] = (ev.value != 0);
         }
         else if (ev.type == EV_ABS)
         {
             i32 a = map_axis(ev.code);
-            if (a >= 0)
-                axes[a] = normalize_axis(ev.value, -1800, 1800);
+            if (a >= 0) axes[a] = normalize_axis(ev.value, -1800, 1800);
         }
     }
 }
 
 static bool input_init()
 {
-    INFO("Opening input device...");
+    LOG_INFO("Opening input device...");
     gp_fd = open("/dev/input/event2", O_RDONLY | O_NONBLOCK);
-    FAIL_CHECK(gp_fd < 0, "open /dev/input/event2");
-    INFO("[OK] Input fd=%d", gp_fd);
+    ASSERT(gp_fd >= 0, "Failed to open input device");
 
+    LOG_INFO("Input device initialized");
     return true;
 }
 
@@ -369,71 +344,68 @@ static void input_shutdown()
     close(gp_fd);
 }
 
-bool device_init(const config_t& config)
+// Public API
+bool init(const config_t& config)
 {
     if (!display_init(config.display_vsync))
         return false;
 
-    if (!audio_init(config.audio_sample_rate, config.audio_channels, config.audio_callback, config.audio_userdata))
+    if (!audio_init(config.audio_sample_rate, config.audio_channels,
+        config.audio_frame_count, config.audio_callback, config.audio_userdata))
         return false;
 
     if (!input_init())
         return false;
-    
-    INFO("[DONE] Device initialize.");
+
+    LOG_INFO("Device initialized successfully");
     return true;
 }
 
-void device_shutdown()
+void shutdown()
 {
     display_shutdown();
     audio_shutdown();
     input_shutdown();
 
-    INFO("[DONE] Device shutdown.");
+    LOG_INFO("Device shutdown complete");
 }
 
-bool device_begin_frame()
+bool begin_frame()
 {
-    return !should_close;
+    return !display_should_close;
 }
 
-void device_end_frame()
+void end_frame()
 {
     input_poll();
     display_present();
 }
 
-void device_close()
+void close()
 {
-    should_close = true;
+    display_should_close = true;
 }
 
-f64 device_time()
+void screen_size(i32* width, i32* height)
+{
+    *width = display_drm_mode.hdisplay;
+    *height = display_drm_mode.vdisplay;
+}
+
+f64 get_time()
 {
     struct timespec cur_ts;
     clock_gettime(CLOCK_MONOTONIC, &cur_ts);
-    return (cur_ts.tv_sec - start_ts.tv_sec) + (cur_ts.tv_nsec - start_ts.tv_nsec) * 1e-9;
+    return (cur_ts.tv_sec - device_start_ts.tv_sec) +
+        (cur_ts.tv_nsec - device_start_ts.tv_nsec) * 1e-9;
 }
 
-void device_size(i32* width, i32* height)
-{
-    *width = mode.hdisplay;
-    *height = mode.vdisplay;
-}
-
-bool device_button(u8 btn)
+bool is_button_pressed(u8 btn)
 {
     return buttons[btn];
 }
 
-f32 device_axis(u8 axis)
+f32 get_axis_value(u8 axis)
 {
     return axes[axis];
-}
-
-#include <glad/glad.h>
-static i32 glad_init()
-{
-    return gladLoadGLES2Loader((GLADloadproc)eglGetProcAddress);
 }

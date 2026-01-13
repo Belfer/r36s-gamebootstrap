@@ -1,6 +1,4 @@
 #include <device.hpp>
-#include <glad/glad.h>
-#include <math.h>
 
 #define PI 3.14159265
 
@@ -42,7 +40,7 @@ static void audio_callback(i16* samples, i32 frames, void* userdata)
 
 void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
 {
-    WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
 }
 
 static const char* vertex_shader_src =
@@ -65,55 +63,6 @@ static const char* fragment_shader_src =
 "  gl_FragColor = vColor;\n"
 "}";
 
-static GLuint compile_shader(GLenum type, const char* src)
-{
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &src, nullptr);
-    glCompileShader(shader);
-
-    GLint ok;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char buf[512];
-        glGetShaderInfoLog(shader, 512, nullptr, buf);
-        ERROR("Shader compile failed: %s", buf);
-    }
-
-    return shader;
-}
-
-static GLuint create_program(const char* vsrc, const char* fsrc)
-{
-    GLuint vs = compile_shader(GL_VERTEX_SHADER, vsrc);
-    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, fsrc);
-    GLuint prog = glCreateProgram();
-
-    glAttachShader(prog, vs);
-    glAttachShader(prog, fs);
-    glLinkProgram(prog);
-
-    GLint ok;
-    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char buf[512];
-        glGetProgramInfoLog(prog, 512, nullptr, buf);
-        ERROR("Program link failed: %s", buf);
-    }
-
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return prog;
-}
-
-static GLuint create_buffer(GLenum type, GLenum usage, GLsizei size, void* data)
-{
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(type, vbo);
-    glBufferData(type, size, data, usage);
-    return vbo;
-}
-
 int main(int argc, char** args)
 {
     chord_synth_t synth
@@ -131,11 +80,18 @@ int main(int argc, char** args)
     config.display_vsync = true;
     config.audio_sample_rate = 44100;
     config.audio_channels = 2;
+    config.audio_frame_count = 256;
     config.audio_callback = audio_callback;
     config.audio_userdata = &synth;
 
-	if (!device_init(config))
+	if (!init(config))
 		return -1;
+
+    LOG_INFO("GL Vendor: %s", glGetString(GL_VENDOR));
+    LOG_INFO("GL Renderer: %s", glGetString(GL_RENDERER));
+    LOG_INFO("GL Version: %s", glGetString(GL_VERSION));
+    LOG_INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    LOG_INFO("GL Extensions:\n%s", glGetString(GL_EXTENSIONS));
 
     glEnable(GL_DEBUG_OUTPUT);
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
@@ -167,12 +123,12 @@ int main(int argc, char** args)
     f32 fps_timer = 0.f;
     i32 fps_frames = 0;
 
-    f32 pos[2] = { 0.f, 0.f };
+    vec2 pos{ 0.f, 0.f };
 
-    f64 last_time = device_time();
-	while (device_begin_frame())
+    f64 last_time = get_time();
+	while (begin_frame())
 	{
-        f64 curr_time = device_time();
+        f64 curr_time = get_time();
         f32 elapsed = (f32)(curr_time - last_time);
         last_time = curr_time;
 
@@ -184,66 +140,64 @@ int main(int argc, char** args)
         {
             f32 fps = fps_frames / fps_timer;
             f32 frame_time = fps_timer / fps_frames;
-            INFO("%.2f fps, %.4f s/frame", fps, frame_time);
+            LOG_INFO("%.2f fps, %.4f s/frame", fps, frame_time);
             fps_timer = fmod(fps_timer, 1.f);
             fps_frames = 0;
         }
 
-        if (device_button(GP_BTN_A))      INFO("A pressed");
-        if (device_button(GP_BTN_B))      INFO("B pressed");
-        if (device_button(GP_BTN_X))      INFO("X pressed");
-        if (device_button(GP_BTN_Y))      INFO("Y pressed");
-        if (device_button(GP_BTN_L1))     INFO("L1 pressed");
-        if (device_button(GP_BTN_L2))     INFO("L2 pressed");
-        if (device_button(GP_BTN_L3))     INFO("L3 pressed");
-        if (device_button(GP_BTN_R1))     INFO("R1 pressed");
-        if (device_button(GP_BTN_R2))     INFO("R2 pressed");
-        if (device_button(GP_BTN_R3))     INFO("R3 pressed");
-        if (device_button(GP_BTN_START))  INFO("START pressed");
-        if (device_button(GP_BTN_SELECT)) INFO("SELECT pressed");
-        if (device_button(GP_BTN_UP))     INFO("UP pressed");
-        if (device_button(GP_BTN_DOWN))   INFO("DOWN pressed");
-        if (device_button(GP_BTN_LEFT))   INFO("LEFT pressed");
-        if (device_button(GP_BTN_RIGHT))  INFO("RIGHT pressed");
+        if (is_button_pressed(GP_BTN_A))      LOG_INFO("A pressed");
+        if (is_button_pressed(GP_BTN_B))      LOG_INFO("B pressed");
+        if (is_button_pressed(GP_BTN_X))      LOG_INFO("X pressed");
+        if (is_button_pressed(GP_BTN_Y))      LOG_INFO("Y pressed");
+        if (is_button_pressed(GP_BTN_L1))     LOG_INFO("L1 pressed");
+        if (is_button_pressed(GP_BTN_L2))     LOG_INFO("L2 pressed");
+        if (is_button_pressed(GP_BTN_L3))     LOG_INFO("L3 pressed");
+        if (is_button_pressed(GP_BTN_R1))     LOG_INFO("R1 pressed");
+        if (is_button_pressed(GP_BTN_R2))     LOG_INFO("R2 pressed");
+        if (is_button_pressed(GP_BTN_R3))     LOG_INFO("R3 pressed");
+        if (is_button_pressed(GP_BTN_START))  LOG_INFO("START pressed");
+        if (is_button_pressed(GP_BTN_SELECT)) LOG_INFO("SELECT pressed");
+        if (is_button_pressed(GP_BTN_UP))     LOG_INFO("UP pressed");
+        if (is_button_pressed(GP_BTN_DOWN))   LOG_INFO("DOWN pressed");
+        if (is_button_pressed(GP_BTN_LEFT))   LOG_INFO("LEFT pressed");
+        if (is_button_pressed(GP_BTN_RIGHT))  LOG_INFO("RIGHT pressed");
 
-        f32 lx = device_axis(GP_AXIS_LX);
-        f32 ly = device_axis(GP_AXIS_LY);
-        f32 rx = device_axis(GP_AXIS_RX);
-        f32 ry = device_axis(GP_AXIS_RY);
+        f32 lx = get_axis_value(GP_AXIS_LX);
+        f32 ly = get_axis_value(GP_AXIS_LY);
+        f32 rx = get_axis_value(GP_AXIS_RX);
+        f32 ry = get_axis_value(GP_AXIS_RY);
 
         if (fabs(lx) > 0.1f || fabs(ly) > 0.1f)
-            INFO("Left stick: (%.2f, %.2f)", lx, ly);
+            LOG_INFO("Left stick: (%.2f, %.2f)", lx, ly);
 
         if (fabs(rx) > 0.1f || fabs(ry) > 0.1f)
-            INFO("Right stick: (%.2f, %.2f)", rx, ry);
+            LOG_INFO("Right stick: (%.2f, %.2f)", rx, ry);
 
-        if (device_button(GP_BTN_START))
-            device_close();
+        if (is_button_pressed(GP_BTN_START))
+            close();
 
-        pos[0] += lx * elapsed;
-        pos[0] = fmin(fmax(pos[0], -1.f), 1.f);
-        pos[1] -= ly * elapsed;
-        pos[1] = fmin(fmax(pos[1], -1.f), 1.f);
+        vec2 input{ lx * sqrt(1.0f - 0.5f * ly * ly), -ly * sqrt(1.0f - 0.5f * lx * lx) };
+        pos = clamp(pos + input * elapsed, -1.f, 1.f);
 
         i32 w, h;
-        device_size(&w, &h);
+        screen_size(&w, &h);
         glViewport(0, 0, w, h);
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
         glUseProgram(program);
         glUniform1f(utime_loc, time);
-        glUniform2f(upos_loc, pos[0], pos[1]);
+        glUniform2f(upos_loc, pos.x, pos.y);
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glBindVertexArray(0);
 
-		device_end_frame();
+		end_frame();
 	}
 
     glDeleteProgram(program);
     glDeleteBuffers(1, &vbo);
 
-	device_shutdown();
+	shutdown();
 	return 0;
 }
