@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(extern)
 
-set(GAME_SRCS "src/main.cpp" "src/impl/device.cpp")
+set(GAME_SRCS "src/main.cpp" "src/particles.cpp" "src/impl/device.cpp")
 
 if(WIN32)
     set(GAME_SRCS ${GAME_SRCS} "src/impl/device_win.cpp")
@@ -15,6 +15,6 @@ else()
 endif()
 
 add_executable(game ${GAME_SRCS})
-target_include_directories(game PRIVATE "include")
-target_link_libraries(game PRIVATE extern_deps)
-target_compile_definitions(game PRIVATE ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+target_include_directories(game PUBLIC "include")
+target_link_libraries(game PUBLIC extern_deps)
+target_compile_definitions(game PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets")

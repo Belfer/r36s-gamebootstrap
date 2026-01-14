@@ -6,9 +6,12 @@ add_library(extern_deps INTERFACE)
 add_library(glad STATIC "glad/src/glad.c")
 target_include_directories(glad PUBLIC "glad/include")
 
+add_library(stb INTERFACE)
+target_include_directories(stb INTERFACE "stb")
+
 if(WIN32)
     add_subdirectory(glfw)
-    target_link_libraries(extern_deps INTERFACE glfw glad winmm)
+    target_link_libraries(extern_deps INTERFACE glfw glad winmm stb)
 
 else()
     find_package(PkgConfig REQUIRED)
@@ -33,5 +36,6 @@ else()
         ${GLES2_LIBRARIES}
         ${ALSA_LIBRARIES}
         glad
+        stb
     )
 endif()
