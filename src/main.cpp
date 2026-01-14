@@ -1,78 +1,130 @@
 #include <device.hpp>
 
-#define PI 3.14159265
+#define MAX_VERTICES 1024
+struct vertex_t { vec2 pos; u32 col; };
+static vertex_t vertices[MAX_VERTICES];
+static u32 start_vert_idx = 0;
+static u32 end_vert_idx = 0;
 
-struct chord_synth_t
+static u32 vertex_count()
 {
-    f32 phase[4];
-    f32 freq[4];
-    f32 sample_rate;
-    f32 lfo_phase[4];
-};
+    return end_vert_idx >= start_vert_idx
+        ? end_vert_idx - start_vert_idx
+        : MAX_VERTICES - start_vert_idx + end_vert_idx;
+}
 
-static void audio_callback(i16* samples, i32 frames, void* userdata)
+static bool check_buffer_size(u32 n)
 {
-    chord_synth_t* s = (chord_synth_t*)userdata;
+    return vertex_count() + n > MAX_VERTICES;
+}
 
-    const f32 lfo_speeds[4] = { 0.03f, 0.025f, 0.035f, 0.02f };
-    const f32 lfo_amount = 0.2f;
+static void add_vertex(const vec2& p, u32 c)
+{
+    if (vertex_count() == MAX_VERTICES) return;
+    vertices[end_vert_idx].pos = p;
+    vertices[end_vert_idx].col = c;
+    end_vert_idx = (end_vert_idx + 1) % MAX_VERTICES;
+}
 
-    for (i32 i = 0; i < frames; i++)
+static void consume_vertices(u32 n)
+{
+    start_vert_idx = (start_vert_idx + n) % MAX_VERTICES;
+}
+
+static void add_line(const vec2& a, const vec2& b, u32 c)
+{
+    add_vertex(a, c);
+    add_vertex(b, c);
+}
+
+static void draw_rect(vec2 min, vec2 max, u32 col)
+{
+    add_line({ min.x, min.y }, { max.x, min.y }, col);
+    add_line({ max.x, min.y }, { max.x, max.y }, col);
+    add_line({ max.x, max.y }, { min.x, max.y }, col);
+    add_line({ min.x, max.y }, { min.x, min.y }, col);
+}
+
+static void draw_grid(vec2 min, vec2 max, i32 divisions, u32 col,
+    vec2(*mapping_fn)(const vec2&))
+{
+    vec2 size = { max.x - min.x, max.y - min.y };
+    vec2 half = { size.x * 0.5f, size.y * 0.5f };
+    vec2 center = { min.x + half.x, min.y + half.y };
+
+    for (i32 i = 1; i < divisions; ++i)
     {
-        f32 value = 0.0f;
-        for (i32 n = 0; n < 3; n++)
-        {
-            f32 phase_offset = sinf(s->lfo_phase[n]) * lfo_amount;
-            value += sinf(s->phase[n] + phase_offset);
+        f32 t = -1.0f + 2.0f * (f32)i / (f32)divisions;
 
-            s->phase[n] += 2.0f * PI * s->freq[n] / s->sample_rate;
-            if (s->phase[n] > 2.0f * PI)
-                s->phase[n] -= 2.0f * PI;
-        }
+        vec2 px1 = mapping_fn({ t, -1.f });
+        vec2 px2 = mapping_fn({ t,  1.f });
+        add_line(
+            { center.x + px1.x * half.x, center.y + px1.y * half.y },
+            { center.x + px2.x * half.x, center.y + px2.y * half.y },
+            col
+        );
 
-        value *= 0.25f;
-
-        i16 sample = (i16)(value * 3000);
-        samples[i * 2 + 0] = sample; // L
-        samples[i * 2 + 1] = sample; // R
+        vec2 py1 = mapping_fn({ -1.f, t });
+        vec2 py2 = mapping_fn({ 1.f, t });
+        add_line(
+            { center.x + py1.x * half.x, center.y + py1.y * half.y },
+            { center.x + py2.x * half.x, center.y + py2.y * half.y },
+            col
+        );
     }
 }
 
-void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+
+static void draw_marker(vec2 center, f32 r, u32 col)
 {
-    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+    draw_rect(
+        { center.x - r, center.y - r },
+        { center.x + r, center.y + r },
+        col
+    );
 }
 
-static const char* vertex_shader_src =
-"#version 100\n"
-"attribute vec2 aPos;\n"
-"attribute vec4 aColor;\n"
-"uniform float uTime;\n"
-"uniform vec2 uPos;\n"
-"varying vec4 vColor;\n"
-"void main() {\n"
-"  gl_Position = vec4(uPos + aPos * (1.0 + sin(uTime) * 0.1), 0.0, 1.0);\n"
-"  vColor = aColor;\n"
-"}";
+static vec2 map_square_to_circle(const vec2& v)
+{
+    return
+    {
+        v.x * sqrtf(1.0f - 0.5f * v.y * v.y),
+        v.y * sqrtf(1.0f - 0.5f * v.x * v.x)
+    };
+}
 
-static const char* fragment_shader_src =
-"#version 100\n"
-"precision mediump float;\n"
-"varying vec4 vColor;\n"
-"void main() {\n"
-"  gl_FragColor = vColor;\n"
-"}";
+static vec2 input_to_square(vec2 input, vec2 min, vec2 max)
+{
+    vec2 half = { (max.x - min.x) * 0.5f, (max.y - min.y) * 0.5f };
+    vec2 center = { min.x + half.x, min.y + half.y };
+
+    return {
+        center.x + input.x * half.x,
+        center.y + input.y * half.y
+    };
+}
+
+static const char* vsrc = R"(
+#version 100
+attribute vec2 aPos;
+attribute vec4 aColor;
+uniform vec2 uSize;
+varying vec4 vColor;
+void main() {
+    gl_Position = vec4((aPos - uSize * 0.5) / uSize, 0.0, 1.0);
+    vColor = aColor;
+})";
+
+static const char* fsrc = R"(
+#version 100
+precision mediump float;
+varying vec4 vColor;
+void main() {
+    gl_FragColor = vColor;
+})";
 
 int main(int argc, char** args)
 {
-    chord_synth_t synth
-    {
-        {0,0,0,0},
-        { 261.63f, 329.63f, 392.00f, 523.25f }, // C4-E4-G4-C5
-        44100,
-        { 0.05f,0.1f,0.001f,0.5f }
-    };
-
     config_t config{};
     config.display_title = "Game";
     config.display_width = 800;
@@ -81,123 +133,106 @@ int main(int argc, char** args)
     config.audio_sample_rate = 44100;
     config.audio_channels = 2;
     config.audio_frame_count = 256;
-    config.audio_callback = audio_callback;
-    config.audio_userdata = &synth;
+    config.audio_callback = [](i16*, i32, void*) {};
+    config.audio_userdata = nullptr;
 
-	if (!init(config))
-		return -1;
-
-    LOG_INFO("GL Vendor: %s", glGetString(GL_VENDOR));
-    LOG_INFO("GL Renderer: %s", glGetString(GL_RENDERER));
-    LOG_INFO("GL Version: %s", glGetString(GL_VERSION));
-    LOG_INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
-    LOG_INFO("GL Extensions:\n%s", glGetString(GL_EXTENSIONS));
-
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    glDebugMessageCallback(gl_debug_callback, nullptr);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
-
-    struct vertex_t { f32 pos[2]; u32 col; };
-    vertex_t vertices[] = { { {0.f,0.5f}, 0xFF0000FF }, { {-0.5f,-0.5f}, 0xFF00FF00 }, { {0.5f,-0.5f}, 0xFFFF0000 } };
-    GLuint vbo = create_buffer(GL_ARRAY_BUFFER, GL_STATIC_DRAW, sizeof(vertices), vertices);
+    if (!init(config))
+        return -1;
 
     GLuint vao;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-    GLuint program = create_program(vertex_shader_src, fragment_shader_src);
+    GLuint program = create_program(vsrc, fsrc);
     GLint apos_loc = glGetAttribLocation(program, "aPos");
     GLint acolor_loc = glGetAttribLocation(program, "aColor");
-    GLint utime_loc = glGetUniformLocation(program, "uTime");
-    GLint upos_loc = glGetUniformLocation(program, "uPos");
+    GLint usize_loc = glGetUniformLocation(program, "uSize");
+
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), nullptr, GL_STREAM_DRAW);
 
     glEnableVertexAttribArray(apos_loc);
     glVertexAttribPointer(apos_loc, 2, GL_FLOAT, GL_FALSE, sizeof(vertex_t), (void*)0);
     glEnableVertexAttribArray(acolor_loc);
     glVertexAttribPointer(acolor_loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex_t), (void*)(2 * sizeof(GLfloat)));
+
     glBindVertexArray(0);
 
-    f32 time = 0.f;
-    f32 fps_timer = 0.f;
-    i32 fps_frames = 0;
+    i32 w, h;
+    screen_size(&w, &h);
+    glViewport(0, 0, w, h);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
-    vec2 pos{ 0.f, 0.f };
+    // Layout
+    const u32 col_border = 0xFFFFFFFF;
+    const u32 col_grid_raw = 0xFFFF0000;
+    const u32 col_grid_mapped = 0xFF00FF00;
+    const u32 col_raw_marker = 0xFFFF4444;
+    const u32 col_map_marker = 0xFF44AAFF;
 
-    f64 last_time = get_time();
-	while (begin_frame())
-	{
-        f64 curr_time = get_time();
-        f32 elapsed = (f32)(curr_time - last_time);
-        last_time = curr_time;
+    const f32 padding = 40.0f;
+    const f32 size = fminf(w, h) - padding * 2.0f;
 
-        time += elapsed;
-        fps_timer += elapsed;
-        fps_frames++;
+    const vec2 sq_min{ (w - size) * 0.5f, (h - size) * 0.5f };
+    const vec2 sq_max{ sq_min.x + size, sq_min.y + size };
 
-        if (fps_timer >= 1.f)
-        {
-            f32 fps = fps_frames / fps_timer;
-            f32 frame_time = fps_timer / fps_frames;
-            LOG_INFO("%.2f fps, %.4f s/frame", fps, frame_time);
-            fps_timer = fmod(fps_timer, 1.f);
-            fps_frames = 0;
-        }
+    while (begin_frame())
+    {
+        if (is_button_pressed(GP_BTN_START)) close();
 
-        if (is_button_pressed(GP_BTN_A))      LOG_INFO("A pressed");
-        if (is_button_pressed(GP_BTN_B))      LOG_INFO("B pressed");
-        if (is_button_pressed(GP_BTN_X))      LOG_INFO("X pressed");
-        if (is_button_pressed(GP_BTN_Y))      LOG_INFO("Y pressed");
-        if (is_button_pressed(GP_BTN_L1))     LOG_INFO("L1 pressed");
-        if (is_button_pressed(GP_BTN_L2))     LOG_INFO("L2 pressed");
-        if (is_button_pressed(GP_BTN_L3))     LOG_INFO("L3 pressed");
-        if (is_button_pressed(GP_BTN_R1))     LOG_INFO("R1 pressed");
-        if (is_button_pressed(GP_BTN_R2))     LOG_INFO("R2 pressed");
-        if (is_button_pressed(GP_BTN_R3))     LOG_INFO("R3 pressed");
-        if (is_button_pressed(GP_BTN_START))  LOG_INFO("START pressed");
-        if (is_button_pressed(GP_BTN_SELECT)) LOG_INFO("SELECT pressed");
-        if (is_button_pressed(GP_BTN_UP))     LOG_INFO("UP pressed");
-        if (is_button_pressed(GP_BTN_DOWN))   LOG_INFO("DOWN pressed");
-        if (is_button_pressed(GP_BTN_LEFT))   LOG_INFO("LEFT pressed");
-        if (is_button_pressed(GP_BTN_RIGHT))  LOG_INFO("RIGHT pressed");
+        vec2 ljoy{ get_axis_value(GP_AXIS_LX), -get_axis_value(GP_AXIS_LY) };
+        vec2 rjoy{ get_axis_value(GP_AXIS_RX), get_axis_value(GP_AXIS_RY) };
 
-        f32 lx = get_axis_value(GP_AXIS_LX);
-        f32 ly = get_axis_value(GP_AXIS_LY);
-        f32 rx = get_axis_value(GP_AXIS_RX);
-        f32 ry = get_axis_value(GP_AXIS_RY);
+        vec2 raw = clamp(ljoy, -1.f, 1.f);
+        vec2 mapped = map_square_to_circle(raw);
 
-        if (fabs(lx) > 0.1f || fabs(ly) > 0.1f)
-            LOG_INFO("Left stick: (%.2f, %.2f)", lx, ly);
+        draw_rect(sq_min, sq_max, col_border);
+        draw_grid(sq_min, sq_max, 10, col_grid_raw, [](const vec2& v) { return v; });
+        draw_grid(sq_min, sq_max, 10, col_grid_mapped, [](const vec2& v) { return map_square_to_circle(v); });
 
-        if (fabs(rx) > 0.1f || fabs(ry) > 0.1f)
-            LOG_INFO("Right stick: (%.2f, %.2f)", rx, ry);
+        vec2 raw_pos = input_to_square(raw, sq_min, sq_max);
+        vec2 mapped_pos = input_to_square(mapped, sq_min, sq_max);
 
-        if (is_button_pressed(GP_BTN_START))
-            close();
+        const f32 marker_size = 5.0f;
+        draw_marker(raw_pos, marker_size, col_raw_marker);
+        draw_marker(mapped_pos, marker_size, col_map_marker);
 
-        vec2 input{ lx * sqrt(1.0f - 0.5f * ly * ly), -ly * sqrt(1.0f - 0.5f * lx * lx) };
-        pos = clamp(pos + input * elapsed, -1.f, 1.f);
-
-        i32 w, h;
-        screen_size(&w, &h);
-        glViewport(0, 0, w, h);
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-        glUseProgram(program);
-        glUniform1f(utime_loc, time);
-        glUniform2f(upos_loc, pos.x, pos.y);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        glBindVertexArray(0);
+        const u32 count = vertex_count();
+        if (count > 0)
+        {
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), nullptr, GL_STREAM_DRAW);
 
-		end_frame();
-	}
+            if (start_vert_idx < end_vert_idx)
+            {
+                glBufferSubData(GL_ARRAY_BUFFER, 0, count * sizeof(vertex_t), &vertices[start_vert_idx]);
+            }
+            else
+            {
+                const u32 first_part = MAX_VERTICES - start_vert_idx;
+                glBufferSubData(GL_ARRAY_BUFFER, 0, first_part * sizeof(vertex_t), &vertices[start_vert_idx]);
+                glBufferSubData(GL_ARRAY_BUFFER, first_part * sizeof(vertex_t), end_vert_idx * sizeof(vertex_t), &vertices[0]);
+            }
+
+            glUseProgram(program);
+            glUniform2f(usize_loc, w, h);
+            glBindVertexArray(vao);
+            glDrawArrays(GL_LINES, 0, count);
+            glBindVertexArray(0);
+
+            consume_vertices(count);
+        }
+
+        end_frame();
+    }
 
     glDeleteProgram(program);
     glDeleteBuffers(1, &vbo);
 
-	shutdown();
-	return 0;
+    shutdown();
+    return 0;
 }
