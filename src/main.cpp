@@ -1,5 +1,9 @@
 #include <device.hpp>
 
+#define glGenVertexArraysX (glGenVertexArrays ? glGenVertexArrays : glGenVertexArraysOES ? glGenVertexArraysOES : nullptr)
+#define glBindVertexArrayX (glBindVertexArray ? glBindVertexArray : glBindVertexArrayOES ? glBindVertexArrayOES : nullptr)
+#define glDeleteVertexArraysX (glDeleteVertexArrays ? glDeleteVertexArrays : glDeleteVertexArraysOES ? glDeleteVertexArraysOES : nullptr)
+
 #define PI 3.14159265
 
 struct chord_synth_t
@@ -107,8 +111,8 @@ int main(int argc, char** args)
     GLuint vbo = create_buffer(GL_ARRAY_BUFFER, GL_STATIC_DRAW, sizeof(vertices), vertices);
 
     GLuint vao;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
+    glGenVertexArraysX(1, &vao);
+    glBindVertexArrayX(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
     GLuint program = create_program(vertex_shader_src, fragment_shader_src);
@@ -121,7 +125,7 @@ int main(int argc, char** args)
     glVertexAttribPointer(apos_loc, 2, GL_FLOAT, GL_FALSE, sizeof(vertex_t), (void*)0);
     glEnableVertexAttribArray(acolor_loc);
     glVertexAttribPointer(acolor_loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex_t), (void*)(2 * sizeof(GLfloat)));
-    glBindVertexArray(0);
+    glBindVertexArrayX(0);
 
     f32 time = 0.f;
     f32 fps_timer = 0.f;
@@ -194,15 +198,16 @@ int main(int argc, char** args)
         glUseProgram(program);
         glUniform1f(utime_loc, time);
         glUniform2f(upos_loc, pos.x, pos.y);
-        glBindVertexArray(vao);
+        glBindVertexArrayX(vao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
-        glBindVertexArray(0);
+        glBindVertexArrayX(0);
 
 		end_frame();
 	}
 
     glDeleteProgram(program);
     glDeleteBuffers(1, &vbo);
+    glDeleteVertexArraysX(1, &vao);
 
 	shutdown();
 	return 0;
