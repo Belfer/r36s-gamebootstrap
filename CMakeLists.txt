@@ -9,7 +9,8 @@ add_subdirectory(extern)
 set(GAME_SRCS
     "src/main.cpp"
     "src/debug.cpp"
-    "src/impl/device.cpp"
+    "src/device.cpp"
+    "src/math.cpp"
 )
 
 if(WIN32)

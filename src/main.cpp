@@ -49,6 +49,8 @@ int main(int argc, char** args)
     f64 last_time = get_time();
 	while (begin_frame())
 	{
+        if (is_button_pressed(GP_BTN_START)) close();
+
         f64 curr_time = get_time();
         f32 dt = (f32)(curr_time - last_time);
         last_time = curr_time;
