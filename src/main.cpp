@@ -66,6 +66,11 @@ static vec2 input_to_square(vec2 input, vec2 min, vec2 max)
     };
 }
 
+void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+{
+    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+}
+
 int main(int argc, char** args)
 {
     config_t config{};
@@ -102,7 +107,8 @@ int main(int argc, char** args)
     glViewport(0, 0, w, h);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
-    const mat4 mvp{{ 1,0,0,0 }, { 0,1,0,0 }, { 0,0,1,0 }, { 0,0,0,1 }};
+    const mat4 mvp = orthographic(0, w, h, 0, -10.0f, 10.f);
+    //const mat4 mvp{ {1,0,0,0}, {0,1,0,0}, {0,0,1,0}, {0,0,0,1} };
 
     // Layout
     const u32 col_border = 0xFFFFFFFF;
@@ -116,6 +122,10 @@ int main(int argc, char** args)
 
     const vec2 sq_min{ (w - size) * 0.5f, (h - size) * 0.5f };
     const vec2 sq_max{ sq_min.x + size, sq_min.y + size };
+
+    f32 time = 0.f;
+    f32 fps_timer = 0.f;
+    i32 fps_frames = 0;
     
     f64 last_time = get_time();
 	while (begin_frame())
@@ -148,16 +158,18 @@ int main(int argc, char** args)
         draw_rect(sq_min, sq_max, col_border);
         draw_grid(sq_min, sq_max, 10, col_grid_raw, [](const vec2& v) { return v; });
         draw_grid(sq_min, sq_max, 10, col_grid_mapped, [](const vec2& v) { return map_square_to_circle(v); });
-
+        
         vec2 raw_pos = input_to_square(raw, sq_min, sq_max);
         vec2 mapped_pos = input_to_square(mapped, sq_min, sq_max);
-
+        
         const f32 marker_size = 5.0f;
         draw_marker(raw_pos, marker_size, col_raw_marker);
         draw_marker(mapped_pos, marker_size, col_map_marker);
         debug_end();
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         debug_draw(mvp);
 
         end_frame();
