@@ -6,7 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(extern)
 
-set(GAME_SRCS "src/main.cpp" "src/impl/device.cpp")
+set(GAME_SRCS
+    "src/main.cpp"
+    "src/debug.cpp"
+    "src/impl/device.cpp"
+)
 
 if(WIN32)
     set(GAME_SRCS ${GAME_SRCS} "src/impl/device_win.cpp")
