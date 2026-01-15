@@ -159,6 +159,19 @@ static void display_present()
     u32 stride = gbm_bo_get_stride(bo);
     u32 fb;
 
+    if (!display_gbm_previous_bo)
+    {
+        int ret = drmModeAddFB(display_drm_fd, display_drm_mode.hdisplay, display_drm_mode.vdisplay, 24, 32, stride, handle, &fb);
+        ASSERT(ret == 0, "drmModeAddFB failed");
+
+        ret = drmModeSetCrtc(display_drm_fd, display_drm_enc->crtc_id, fb, 0, 0, &display_drm_conn->connector_id, 1, &display_drm_mode);
+        ASSERT(ret == 0, "drmModeSetCrtc failed");
+
+        display_gbm_previous_bo = bo;
+        display_gbm_previous_fb = fb;
+        return;
+    }
+
     if (!drmModeAddFB(display_drm_fd, display_drm_mode.hdisplay, display_drm_mode.vdisplay, 24, 32, stride, handle, &fb))
     {
         i32 flip_done = 0;
