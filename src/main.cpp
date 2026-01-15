@@ -3,13 +3,19 @@
 
 struct vertex_t { vec2 pos{}; u32 col{ 0 }; };
 
-#define TRAIL_SIZE 0.005f
-#define TRAIL_LENGTH 100
+#define TRAIL_SIZE 0.01f
+#define TRAIL_LENGTH 20
+#define MAX_TRAILS 500
+
 struct trail_t
 {
-    u32 cur{ 0 };
+    f32 seg_length{ 0.01f };
     vec2 pos{};
+
+    u32 cur{ 0 };
     vec2 trail[TRAIL_LENGTH];
+
+    u32 vert_count{ 0 };
     vertex_t vertices[TRAIL_LENGTH * 2]{};
 
     void init(const vec2& start)
@@ -23,39 +29,40 @@ struct trail_t
     {
         trail[cur] = pos;
 
+        vert_count = 0;
         for (u32 i = 0; i < TRAIL_LENGTH; i++)
         {
             u32 idx = (cur + i + 1) % TRAIL_LENGTH;
             u32 prev_idx = (idx == 0) ? TRAIL_LENGTH - 1 : idx - 1;
 
-            u32 v_idx = 2 * i;
-            auto& vb = vertices[v_idx];
-            auto& va = vertices[v_idx + 1];
-
-            f32 t = (f32)(i - 1) / (f32)TRAIL_LENGTH;
-            u32 alpha = (u32)(t * 255.f);
-            u32 col = (alpha << 24) | 0x00FFFFFF;
-            va.col = vb.col = col;
-
             const vec2 a2b = trail[idx] - trail[prev_idx];
             if (!is_zero(dot(a2b, a2b)))
             {
+                auto& va = vertices[vert_count];
+                auto& vb = vertices[vert_count + 1];
+                vert_count += 2;
+
+                f32 t = (f32)i / (f32)(TRAIL_LENGTH - 1);
+                u32 alpha = (u32)(t * 255.f);
+                u32 col = (alpha << 24) | 0x00FFFFFF;
+                va.col = vb.col = col;
+
                 const vec2 dir = normalized(a2b);
-                va.pos = trail[idx] + vec2{ -dir.y, dir.x } * TRAIL_SIZE * t;
-                vb.pos = trail[idx] + vec2{ dir.y,-dir.x } * TRAIL_SIZE * t;
-            }
-            else
-            {
-                va.pos = trail[idx];
-                vb.pos = trail[idx];
+                va.pos = trail[idx] + vec2{ dir.y, -dir.x } * TRAIL_SIZE * t;
+                vb.pos = trail[idx] + vec2{ -dir.y, dir.x } * TRAIL_SIZE * t;
             }
         }
 
-        cur = (cur + 1) % TRAIL_LENGTH;
+        u32 idx = cur;
+        u32 prev_idx = (idx == 0) ? TRAIL_LENGTH - 1 : idx - 1;
+        const vec2 a2b = trail[idx] - trail[prev_idx];
+        if (dot(a2b, a2b) >= seg_length * seg_length)
+        {
+            cur = (cur + 1) % TRAIL_LENGTH;
+        }
     }
 };
 
-#define MAX_TRAILS 10
 static trail_t trails[MAX_TRAILS];
 
 static const char* vsrc = R"(
@@ -137,10 +144,12 @@ int main(int argc, char** args)
     screen_size(&w, &h);
     glViewport(0, 0, w, h);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     bool init = true;
+    bool freeze = false;
 
     f32 time = 0.f;
     f32 fps_timer = 0.f;
@@ -152,7 +161,7 @@ int main(int argc, char** args)
         if (is_button_pressed(GP_BTN_START)) close();
 
         f64 curr_time = get_time();
-        f32 dt = (f32)(curr_time - last_time);
+        const f32 dt = (f32)(curr_time - last_time);
         last_time = curr_time;
 
         time += dt;
@@ -167,32 +176,68 @@ int main(int argc, char** args)
             fps_frames = 0;
         }
 
+        if (time > 5.f)
+            freeze = true;
+
+        if (!freeze)
+        {
+            f32 speed = 1.0f;
+            f32 min_amp = 0.2f;
+            f32 max_amp = 0.8f;
+            f32 offset_x = 0.05f;
+            f32 offset_y = 0.07f;
+            for (u32 i = 0; i < MAX_TRAILS; i++)
+            {
+                auto& trail = trails[i];
+
+                f32 phase = f32(i) * 1.3f;
+                f32 shape_x = 0.8f + 0.2f * f32(i % 5);
+                f32 shape_y = 0.6f + 0.25f * f32(i % 7);
+                f32 amp_x = min_amp + fmod(f32(i) * 0.13f, max_amp - min_amp);
+                f32 amp_y = min_amp + fmod(f32(i) * 0.17f, max_amp - min_amp);
+                f32 t = time * speed;
+
+                f32 x = cos(t + phase) * amp_x
+                    + sin(t * 1.5f + phase * 2.0f) * offset_x * shape_x;
+                f32 y = sin(t + phase) * amp_y
+                    + cos(t * 1.2f + phase * 1.5f) * offset_y * shape_y;
+
+                f32 origin_bias = std::sin(t * 0.2f + i) * 0.1f;
+                x *= (1.0f - origin_bias);
+                y *= (1.0f - origin_bias);
+                trail.pos.x = x;
+                trail.pos.y = y;
+
+                if (init)
+                    trail.init(trail.pos);
+
+                trail.update(dt);
+            }
+        }
+
+        if (init)
+            init = false;
+
         for (u32 i = 0; i < MAX_TRAILS; i++)
         {
             auto& trail = trails[i];
-
-            f32 speed = 5.0f + 0.2f;
-            f32 freq_x = 1.0f + 0.3f * i;
-            f32 freq_y = 0.8f + 0.25f * i;
-            f32 phase = i * 1.5f;
-
-            f32 amp_x = 0.3f + 0.1f * (i % 3);
-            f32 amp_y = 0.3f + 0.1f * ((i + 1) % 3);
-
-            trail.pos.x = cos(time * speed * freq_x + phase) * amp_x
-                + sin(time * speed * freq_x * 1.5f + phase * 2.0f) * 0.05f;
-
-            trail.pos.y = sin(time * speed * freq_y + phase) * amp_y
-                + cos(time * speed * freq_y * 1.2f + phase * 1.5f) * 0.05f;
-
-            if (init) trail.init(trail.pos);
-            trail.update(dt);
-
             batch.begin();
-            batch.add_vertices((u8*)&trail.vertices[0], sizeof(trail.vertices));
+            batch.add_vertices((u8*)&trail.vertices[0], trail.vert_count * sizeof(vertex_t));
             batch.end();
         }
-        if (init) init = false;
+
+        //batch.begin();
+        //vertex_t vertices[4];
+        //vertices[0].pos = vec2{ -.5f, -.5f };
+        //vertices[0].col = 0x0FFFFFFF;
+        //vertices[1].pos = vec2{ -.5f, .5f };
+        //vertices[1].col = 0x0FFFFFFF;
+        //vertices[2].pos = vec2{ .5f, -.5f };
+        //vertices[2].col = 0x0FFFFFFF;
+        //vertices[3].pos = vec2{ .5f, .5f };
+        //vertices[3].col = 0x0FFFFFFF;
+        //batch.add_vertices((u8*)&vertices[0], sizeof(vertices));
+        //batch.end();
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
