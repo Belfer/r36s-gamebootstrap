@@ -6,7 +6,7 @@ static GLuint vao{ 0 };
 static GLuint vbo{ 0 };
 static GLint umvp{ 0 };
 
-#define BATCH_SIZE (10)
+#define BATCH_SIZE (1024)
 #define BATCH_COUNT (2)
 #define BUFFER_SIZE (BATCH_SIZE + BATCH_SIZE*2 + BATCH_SIZE*3)
 static u8 curr_batch{ 0 };
