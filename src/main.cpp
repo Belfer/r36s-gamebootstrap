@@ -91,7 +91,11 @@ int main(int argc, char** args)
     LOG_INFO("GL Renderer: %s", glGetString(GL_RENDERER));
     LOG_INFO("GL Version: %s", glGetString(GL_VERSION));
     LOG_INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
-    LOG_INFO("GL Extensions:\n%s", glGetString(GL_EXTENSIONS));
+    GLint extensionCount = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    LOG_INFO("GL Extensions:");
+    for (GLint i = 0; i < extensionCount; ++i)
+        LOG_INFO("  %s", (const char*)glGetStringi(GL_EXTENSIONS, i));
 
     glEnable(GL_DEBUG_OUTPUT);
     glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
@@ -128,6 +132,8 @@ int main(int argc, char** args)
     f64 last_time = get_time();
 	while (begin_frame())
 	{
+        if (is_button_pressed(GP_BTN_START)) close();
+
         f64 curr_time = get_time();
         f32 elapsed = (f32)(curr_time - last_time);
         last_time = curr_time;
