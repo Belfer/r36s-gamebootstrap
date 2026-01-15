@@ -1,9 +1,5 @@
 #include <device.hpp>
 
-#define glGenVertexArraysX (glGenVertexArrays ? glGenVertexArrays : glGenVertexArraysOES ? glGenVertexArraysOES : nullptr)
-#define glBindVertexArrayX (glBindVertexArray ? glBindVertexArray : glBindVertexArrayOES ? glBindVertexArrayOES : nullptr)
-#define glDeleteVertexArraysX (glDeleteVertexArrays ? glDeleteVertexArrays : glDeleteVertexArraysOES ? glDeleteVertexArraysOES : nullptr)
-
 #define PI 3.14159265
 
 struct chord_synth_t
