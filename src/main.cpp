@@ -1,6 +1,20 @@
 #include <device.hpp>
 #include <debug.hpp>
 
+static mat4 orthographic(f32 left, f32 right, f32 top, f32 bottom, f32 near, f32 far)
+{
+    f32 dx = right - left;
+    f32 dy = top - bottom;
+    f32 dz = far - near;
+
+    return mat4{
+        vec4{ 2.f / dx, 0.f,    0.f,    0.f },
+        vec4{ 0.f,    2.f / dy, 0.f,    0.f },
+        vec4{ 0.f,    0.f,   -2.f / dz, 0.f },
+        vec4{ -(right + left) / dx, -(top + bottom) / dy, -(far + near) / dz, 1.f }
+    };
+}
+
 static void draw_rect(vec2 min, vec2 max, u32 col)
 {
     debug_line({ min.x, min.y, 0.f }, { max.x, min.y, 0.f }, col);
