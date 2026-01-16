@@ -159,6 +159,19 @@ static void display_present()
     u32 stride = gbm_bo_get_stride(bo);
     u32 fb;
 
+    if (!display_gbm_previous_bo)
+    {
+        int ret = drmModeAddFB(display_drm_fd, display_drm_mode.hdisplay, display_drm_mode.vdisplay, 24, 32, stride, handle, &fb);
+        ASSERT(ret == 0, "drmModeAddFB failed");
+
+        ret = drmModeSetCrtc(display_drm_fd, display_drm_enc->crtc_id, fb, 0, 0, &display_drm_conn->connector_id, 1, &display_drm_mode);
+        ASSERT(ret == 0, "drmModeSetCrtc failed");
+
+        display_gbm_previous_bo = bo;
+        display_gbm_previous_fb = fb;
+        return;
+    }
+
     if (!drmModeAddFB(display_drm_fd, display_drm_mode.hdisplay, display_drm_mode.vdisplay, 24, 32, stride, handle, &fb))
     {
         i32 flip_done = 0;
@@ -216,10 +229,18 @@ static bool audio_init(u32 sample_rate, i32 channels, i32 frame_count,
     config_t::audio_callback_t cb, void* userdata)
 {
     LOG_INFO("Initializing audio subsystem...");
-    ASSERT(cb != nullptr, "Audio callback is null");
+    if (cb == nullptr)
+    {
+        LOG_ERROR("Audio callback is null");
+        return false;
+    }
 
     i32 rc = snd_pcm_open(&pcm, "default", SND_PCM_STREAM_PLAYBACK, 0);
-    ASSERT(rc >= 0, "Failed to open audio device");
+    if (rc < 0)
+    {
+        LOG_ERROR("Failed to open audio device");
+        return false;
+    }
 
     snd_pcm_hw_params_t* hw;
     snd_pcm_hw_params_alloca(&hw);
@@ -333,7 +354,11 @@ static bool input_init()
 {
     LOG_INFO("Opening input device...");
     gp_fd = open("/dev/input/event2", O_RDONLY | O_NONBLOCK);
-    ASSERT(gp_fd >= 0, "Failed to open input device");
+    if (gp_fd < 0)
+    {
+        LOG_ERROR("Failed to open input device");
+        return false;
+    }
 
     LOG_INFO("Input device initialized");
     return true;
@@ -348,16 +373,19 @@ static void input_shutdown()
 bool init(const config_t& config)
 {
     if (!display_init(config.display_vsync))
+    {
+        LOG_ERROR("Display initialization failed. A functional display is required for operation.");
         return false;
+    }
 
     if (!audio_init(config.audio_sample_rate, config.audio_channels,
         config.audio_frame_count, config.audio_callback, config.audio_userdata))
-        return false;
+        LOG_WARN("Audio initialization failed. Continuing without audio support.");
 
     if (!input_init())
-        return false;
+        LOG_WARN("Input system initialization failed. Continuing without input support.");
 
-    LOG_INFO("Device initialized successfully");
+    LOG_INFO("Device initialization completed successfully.");
     return true;
 }
 

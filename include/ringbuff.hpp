@@ -8,14 +8,14 @@ struct ring_buff_t
     ring_buff_t() = default;
 
     inline u32 size() const { return Size; }
-    inline u32 count() const { return (end + (Size + 1) - start) % (Size + 1); }
-    inline void consume(u32 n) { start = (start + (n > Size ? Size : n)) % (Size + 1); }
+    inline u32 count() const { return (end + Size - start) % Size; }
+    inline void consume(u32 n) { start = (start + (n > count() ? count() : n)) % Size; }
 
     inline void add(const T& v)
     {
         if (count() >= Size) return;
-        data[end % Size] = v;
-        end = (end + 1) % (Size + 1);
+        data[end] = v;
+        end = (end + 1) % Size;
     }
 
     T data[Size]{};
