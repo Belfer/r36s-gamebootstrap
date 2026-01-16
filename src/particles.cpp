@@ -1,159 +1,201 @@
 #include <particles.hpp>
-
-GLuint vao;
-GLuint vbo;
-GLuint prg;
-
-GLint apos_loc;
-GLint acol_loc;
-GLint umvp_loc;
-GLint utex_loc;
-
-ring_buff_t<particle_t::vertex_t, MAX_PARTICLES * 2> vertices{};
+#include <device.hpp>
 
 static const char* vsrc = R"(
 #version 100
 attribute vec4 aPos;
+attribute vec2 aUv;
 attribute vec4 aCol;
 uniform mat4 uMVP;
+varying vec2 vUv;
 varying vec4 vCol;
 void main() {
     gl_Position = uMVP * vec4(aPos.xyz, 1.0);
-    gl_PointSize = 100.0 / gl_Position.w;
+    vUv = aUv;
     vCol = aCol;
-    vCol.a = (1.0 - aPos.w);
 })";
 
 static const char* fsrc = R"(
 #version 100
 precision mediump float;
 uniform sampler2D uTex;
+varying vec2 vUv;
 varying vec4 vCol;
 void main() {
-    gl_FragColor = vCol * texture2D(uTex, gl_PointCoord);
+    gl_FragColor = vCol * texture2D(uTex, vUv);
 })";
 
-bool particles_init()
+emitter_t::emitter_t(u32 max_particles, GLuint tex)
+    : batch(sizeof(particle_t::vertex_t), max_particles, max_particles, 2)
+    , particles(max_particles)
+    , max_particles(max_particles)
+    , tex(tex)
 {
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    prg = create_program(vsrc, fsrc);
-    apos_loc = glGetAttribLocation(prg, "aPos");
-    acol_loc = glGetAttribLocation(prg, "aCol");
-    umvp_loc = glGetUniformLocation(prg, "uMVP");
-    utex_loc = glGetUniformLocation(prg, "uTex");
+    glBindBuffer(GL_ARRAY_BUFFER, batch.get_vbo());
 
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), nullptr, GL_STREAM_DRAW);
+    prg = create_program(vsrc, fsrc);
+    const GLint apos_loc = glGetAttribLocation(prg, "aPos");
+    const GLint auv_loc = glGetAttribLocation(prg, "aUv");
+    const GLint acol_loc = glGetAttribLocation(prg, "aCol");
 
     const GLsizei stride = sizeof(particle_t::vertex_t);
     glEnableVertexAttribArray(apos_loc);
     glVertexAttribPointer(apos_loc, 4, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(auv_loc);
+    glVertexAttribPointer(auv_loc, 2, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(f32)));
     glEnableVertexAttribArray(acol_loc);
-    glVertexAttribPointer(acol_loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)(4 * sizeof(f32)));
+    glVertexAttribPointer(acol_loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)(6 * sizeof(f32)));
 
     glBindVertexArray(0);
-
-    return true;
-}
-
-void particles_shutdown()
-{
-    glDeleteProgram(prg);
-    glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);
-}
-
-emitter_t::emitter_t(const vec3& origin, f32 spawn_rate, GLuint texture)
-    : origin(origin), spawn_rate(spawn_rate), texture(texture)
-{
-    particles = new ring_buff_t<particle_t, MAX_PARTICLES>{};
 }
 
 emitter_t::~emitter_t()
 {
-    delete particles;
+    glDeleteProgram(prg);
+    glDeleteVertexArrays(1, &vao);
+}
+
+void emitter_t::add_quad(const vec3& pos, const vec3& size, const vec4& col)
+{
+    const u32 c = vec4_to_rgba(col);
+    batch.begin();
+    particle_t::vertex_t v[4];
+    v[0].pos = vec4{ (-0.5f * size.x) + pos.x, (-0.5f * size.y) + pos.y, pos.z, 1.f};
+    v[0].uv = vec2{ 0.f, 0.f };
+    v[0].col = c;
+    v[1].pos = vec4{ (-0.5f * size.x) + pos.x, (0.5f * size.y) + pos.y, pos.z, 1.f };
+    v[1].uv = vec2{ 0.f, 1.f };
+    v[1].col = c;
+    v[2].pos = vec4{ (0.5f * size.x) + pos.x, (-0.5f * size.y) + pos.y, pos.z, 1.f };
+    v[2].uv = vec2{ 1.f, 0.f };
+    v[2].col = c;
+    v[3].pos = vec4{ (0.5f * size.x) + pos.x, (0.5f * size.y) + pos.y, pos.z, 1.f };
+    v[3].uv = vec2{ 1.f, 1.f };
+    v[3].col = c;
+    batch.add_vertices((u8*)v, sizeof(v));
+    batch.end();
+}
+
+static vec3 rand_in_sphere()
+{
+    f32 u = randf(), v = randf(), w = randf();
+    f32 r = cbrt(u), z = 1.f - 2.f * v, t = 2.f * pi() * w, s = sqrt(1.f - z * z);
+    return { r * s * cos(t), r * s * sin(t), r * z };
+}
+
+template <typename T>
+static void swap(T& a, T& b)
+{
+    T tmp = b;
+    b = a;
+    a = tmp;
 }
 
 void emitter_t::update(f32 dt)
 {
-    timer += dt;
-    while (timer >= spawn_rate)
+    u32 dead_count = 0;
+    for (u32 i = 0; i < particles.count(); i++)
     {
-        timer = fmod(timer, spawn_rate);
+        const u32 idx = (particles.get_start() + i) % particles.get_capacity();
 
-        particle_t p{};
-        vec3 pos = vec3{ randf() * 2.f - 1.f, 0.f, randf() * 2.f - 1.f };
-        pos *= 5.f;
-        pos.y = randf();
-        p.pos = origin + pos;
-        p.vel = randdir() * randf() * 5.f;
-        p.col = 0xFFE2D971;
-        p.time = 0.f;
-        particles->add(p);
-    }
+        auto& p = particles[idx];
+        p.life -= dt;
+        if (p.life <= 0.f)
+        {
+            const u32 tidx = (particles.get_start() + dead_count) % particles.get_capacity();
+            swap(particles[idx], particles[tidx]);
+            dead_count++;
+            continue;
+        }
 
-    u32 count = 0;
-    for (u32 i = particles->start; i < particles->start + particles->count(); i++)
-    {
-        particle_t& p = particles->data[i % particles->size()];
+        const f32 t = 1.f - (p.life / start_lifetime);
 
-        particle_t::vertex_t v{};
-        v.pos = vec4(p.pos.x, p.pos.y, p.pos.z, p.time / lifetime);
-        v.col = p.col;
-        vertices.add(v);
+        if (use_color_curve)
+            p.col = lerp(start_color, end_color, color_curve.eval(t));
 
-        p.vel += gravity * dt;
+        if (use_rotation_curve)
+            p.rot = lerp(start_rotation, end_rotation, rotation_curve.eval(t));
+
+        if (use_size_curve)
+            p.size = lerp(start_size, end_size, size_curve.eval(t));
+
+        if (use_force_curve)
+            p.force = lerp(start_force, end_force, force_curve.eval(t));
+
+        if (use_vel_curve)
+            p.vel = lerp(start_vel, end_vel, vel_curve.eval(t));
+        else
+            p.vel += p.force * dt;
+
         p.pos += p.vel * dt;
-        p.time += dt;
-        if (p.time >= lifetime)
-            count++;
+
+        add_quad(p.pos, p.size, p.col);
     }
-    particles->consume(count);
+    particles.consume(dead_count);
+
+    if (timer >= duration)
+    {
+        if (looping)
+            timer = fmod(timer, duration);
+        else
+            return;
+    }
+
+    timer += dt;
+    spawn_timer += dt;
+
+    while (spawn_timer >= spawn_time_rate)
+    {
+        spawn_timer -= spawn_time_rate;
+        if (particles.count() < max_particles)
+        {
+            vec3 pos = rand_in_sphere();
+            pos = vec3{ pos.x * spawn_size.x, pos.y * spawn_size.y , pos.z * spawn_size.z };
+
+            particle_t p{};
+            p.life = start_lifetime;
+            p.pos = origin + pos;
+            p.vel = start_vel;
+            p.size = start_size;
+            p.rot = start_rotation;
+            p.col = start_color;
+            p.force = start_force;
+
+            particles.add(p);
+        }
+    }
 }
 
 void emitter_t::draw(const mat4& mvp)
 {
-    f32 range[2]{ 1.f, 1000.f };
-    glGetFloatv(GL_ALIASED_POINT_SIZE_RANGE, range);
+    batch.submit();
+
+    glDisable(GL_CULL_FACE);
 
     glDepthMask(GL_FALSE);
     glEnable(GL_DEPTH_TEST);
 
-    glEnable(GL_PROGRAM_POINT_SIZE);
     glEnable(GL_BLEND);
     //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-    const u32 count = vertices.count();
-    if (count > 0)
-    {
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices.data), nullptr, GL_STREAM_DRAW);
+    glBindVertexArrayX(vao);
+    glUseProgram(prg);
+    const GLint umvp_loc = glGetUniformLocation(prg, "uMVP");
+    const GLint utex_loc = glGetUniformLocation(prg, "uTex");
 
-        const u32 vert_size = sizeof(particle_t::vertex_t);
-        if (vertices.start < vertices.end)
-        {
-            glBufferSubData(GL_ARRAY_BUFFER, 0, count * vert_size, &vertices.data[vertices.start]);
-        }
-        else
-        {
-            const u32 first_part = vertices.size() - vertices.start;
-            glBufferSubData(GL_ARRAY_BUFFER, 0, first_part * vert_size, &vertices.data[vertices.start]);
-            glBufferSubData(GL_ARRAY_BUFFER, first_part * vert_size, vertices.end * vert_size, &vertices.data[0]);
-        }
+    glUniformMatrix4fv(umvp_loc, 1, GL_FALSE, (f32*)&mvp);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glUniform1i(utex_loc, 0);
 
-        glUseProgram(prg);
-        glUniformMatrix4fv(umvp_loc, 1, GL_FALSE, (f32*)&mvp);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glUniform1i(utex_loc, 0);
-        glBindVertexArray(vao);
-        glDrawArrays(GL_POINTS, 0, count);
-        glBindVertexArray(0);
+    batch.draw(GL_TRIANGLE_STRIP);
 
-        vertices.consume(count);
-    }
+    glUseProgram(0);
+    glBindVertexArrayX(0);
+
+    batch.clear();
 }

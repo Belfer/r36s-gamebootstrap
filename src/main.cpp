@@ -25,28 +25,58 @@ int main(int argc, char** args)
     config.audio_callback = [](i16*, i32, void*) {};
     config.audio_userdata = nullptr;
 
-    if (!init(config) || !particles_init())
+    if (!init(config))
         return EXIT_FAILURE;
 
-    GLuint tex = load_texture(ASSETS_PATH"/particles/star_09.png");
-    emitter_t emitter{ vec3{ 0.f, 5.0f, 0.f }, 0.001f, tex };
-    emitter.lifetime = 2.0f;
+    GLuint tex = load_texture(ASSETS_PATH"/particles/star_08.png");
+
+    emitter_t emitter{ 5000, tex };
+    
+    emitter.spawn_time_rate = 0.001f;
+
+    emitter.spawn_size = vec3{ 5.f, 5.f, 5.f };
+
+    emitter.use_size_curve = true;
+    emitter.size_curve = cubic_bezier_t::ease(vec2{ 0.0f, 0.0f }, vec2{ 1.0f, 1.0f });
+    emitter.start_size = vec3{ 2.f, 2.f, 2.f };
+    emitter.end_size = vec3{ 0.2f, 0.2f, 0.2f };
+
+    emitter.use_color_curve = true;
+    emitter.color_curve = cubic_bezier_t::ease(vec2{ 0.0f, 0.0f }, vec2{ 1.0f, 1.0f });
+    emitter.start_color = vec4{ 0.1f, 0.5f, 0.8f, 1.f };
+    emitter.end_color = vec4{ 0.4f, 0.05f, 0.25f, 0.f };
 
     i32 w, h;
     screen_size(&w, &h);
     glViewport(0, 0, w, h);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
-    f32 camdist = 1.f;
-    vec2 camrot{ 0.f, 0.f };
+    f32 camdist = 10.f;
+    vec2 camrot{ 90.f, 0.f };
     vec3 camoff{ 0.f, 0.f, 0.f };
     mat4 proj = perspective(DEG2RAD * 60.f, (f32)w / h, 0.1f, 100.f);
+
+    f32 time = 0.f;
+    f32 fps_timer = 0.f;
+    i32 fps_frames = 0;
 
     f64 ts = get_time();
     while (begin_frame())
     {
-        f32 dt = (f32)(get_time() - ts); ts = get_time();
         if (is_button_pressed(GP_BTN_START)) close();
+        const f32 dt = (f32)(get_time() - ts); ts = get_time();
+
+        time += dt;
+        fps_timer += dt;
+        fps_frames++;
+        if (fps_timer >= 1.f)
+        {
+            f32 fps = fps_frames / fps_timer;
+            f32 frame_time = fps_timer / fps_frames;
+            LOG_INFO("%.2f fps, %.4f s/frame", fps, frame_time);
+            fps_timer = fmod(fps_timer, 1.f);
+            fps_frames = 0;
+        }
 
         vec2 ljoy{ get_axis_value(GP_AXIS_LX), -get_axis_value(GP_AXIS_LY) };
         vec2 rjoy{ get_axis_value(GP_AXIS_RX), -get_axis_value(GP_AXIS_RY) };
@@ -66,7 +96,7 @@ int main(int argc, char** args)
         mat4 mvp = proj * view;
 
         //emitter.origin = vec3{ campos.x, emitter.origin.y, campos.z };
-        emitter.update(dt * 0.1f);
+        emitter.update(dt);
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         emitter.draw(mvp);
@@ -76,7 +106,6 @@ int main(int argc, char** args)
 
     glDeleteTextures(1, &tex);
 
-    particles_shutdown();
     shutdown();
     return EXIT_SUCCESS;
 }
