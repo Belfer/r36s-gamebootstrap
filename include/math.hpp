@@ -201,13 +201,17 @@ struct cubic_bezier_t
 
 	vec2 a1{}, a2{}, b1{}, b2{};
 
-	inline f32 eval(f32 t) const
+	inline vec2 eval(f32 t) const
 	{
 		t = clamp(t, 0.f, 1.f);
 		const f32 u = 1.f - t;
 		const f32 tt = t * t;
 		const f32 uu = u * u;
-		return (uu * u) * a1.y + (3.f * uu * t) * a2.y + (3.f * u * tt) * b1.y + (tt * t) * b2.y;
+		const f32 uuu = uu * u;
+		const f32 ttt = tt * t;
+		const f32 x = uuu * a1.x + 3 * uu * t * a2.x + 3 * u * tt * b1.x + ttt * b2.x;
+		const f32 y = uuu * a1.y + 3 * uu * t * a2.y + 3 * u * tt * b1.y + ttt * b2.y;
+		return vec2{ x, y };
 	};
 
 	static cubic_bezier_t linear(f32 a, f32 b)
@@ -235,6 +239,10 @@ inline vec4 clamp(const vec4& v, f32 min, f32 max) { return { clamp(v.x, min, ma
 inline vec2 lerp(const vec2& a, const vec2& b, f32 t) { return { lerp(a.x, b.x, t), lerp(a.y, b.y, t) }; }
 inline vec3 lerp(const vec3& a, const vec3& b, f32 t) { return { lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t) }; }
 inline vec4 lerp(const vec4& a, const vec4& b, f32 t) { return { lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t), lerp(a.w, b.w, t) }; }
+
+inline vec2 lerp(const vec2& a, const vec2& b, const vec2& t) { return { lerp(a.x, b.x, t.x), lerp(a.y, b.y, t.y) }; }
+inline vec3 lerp(const vec3& a, const vec3& b, const vec3& t) { return { lerp(a.x, b.x, t.x), lerp(a.y, b.y, t.y), lerp(a.z, b.z, t.z) }; }
+inline vec4 lerp(const vec4& a, const vec4& b, const vec4& t) { return { lerp(a.x, b.x, t.x), lerp(a.y, b.y, t.y), lerp(a.z, b.z, t.z), lerp(a.w, b.w, t.w) }; }
 
 inline f32 dot(const vec2& a, const vec2& b) { return a.x * b.x + a.y * b.y; }
 inline f32 dot(const vec3& a, const vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }

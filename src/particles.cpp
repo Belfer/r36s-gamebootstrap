@@ -41,11 +41,10 @@ void main() {
     gl_FragColor = vCol * texture2D(uTex, vUv);
 })";
 
-emitter_t::emitter_t(u32 max_particles, GLuint tex)
+emitter_t::emitter_t(u32 max_particles)
     : batch(sizeof(vertex_t), max_particles, max_particles, 2)
     , particles(max_particles)
     , max_particles(max_particles)
-    , tex(tex)
 {
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
@@ -121,19 +120,19 @@ void emitter_t::update(f32 dt)
         const f32 t = 1.f - (p.life / start_lifetime);
 
         if (use_color_curve)
-            p.col = lerp(start_color, end_color, color_curve.eval(t));
+            p.col = lerp(start_color, end_color, color_curve.eval(t).y);
 
         if (use_rotation_curve)
-            p.rot = lerp(start_rotation, end_rotation, rotation_curve.eval(t));
+            p.rot = lerp(start_rotation, end_rotation, rotation_curve.eval(t).y);
 
         if (use_size_curve)
-            p.size = lerp(start_size, end_size, size_curve.eval(t));
+            p.size = lerp(start_size, end_size, size_curve.eval(t).y);
 
         if (use_force_curve)
-            p.force = lerp(start_force, end_force, force_curve.eval(t));
+            p.force = lerp(start_force, end_force, force_curve.eval(t).y);
 
         if (use_vel_curve)
-            p.vel = lerp(start_vel, end_vel, vel_curve.eval(t));
+            p.vel = lerp(start_vel, end_vel, vel_curve.eval(t).y);
         else
             p.vel += p.force * dt;
 
@@ -152,8 +151,11 @@ void emitter_t::update(f32 dt)
     }
 
     timer += dt;
-    spawn_timer += dt;
 
+    if (near_zero(spawn_time_rate))
+        return;
+
+    spawn_timer += dt;
     while (spawn_timer >= spawn_time_rate)
     {
         spawn_timer -= spawn_time_rate;
@@ -165,11 +167,31 @@ void emitter_t::update(f32 dt)
             particle_t p{};
             p.life = start_lifetime;
             p.pos = origin + pos;
-            p.vel = start_vel;
-            p.size = start_size;
-            p.rot = start_rotation;
-            p.col = start_color;
-            p.force = start_force;
+
+            if (use_random_vel)
+                p.vel = lerp(start_vel, end_vel, { randf(), randf(), randf() });
+            else
+                p.vel = start_vel;
+            
+            if (use_random_vel)
+                p.size = lerp(start_size, end_size, { randf(), randf(), randf() });
+            else
+                p.size = start_size;
+
+            if (use_random_vel)
+                p.rot = lerp(start_rotation, end_rotation, { randf(), randf(), randf() });
+            else
+                p.rot = start_rotation;
+
+            if (use_random_vel)
+                p.col = lerp(start_color, end_color, { randf(), randf(), randf(), randf() });
+            else
+                p.col = start_color;
+
+            if (use_random_vel)
+                p.force = lerp(start_force, end_force, randf());
+            else
+                p.force = start_force;
 
             particles.add(p);
         }

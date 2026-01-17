@@ -22,7 +22,7 @@ enum struct particle_spawn_shape_t
 
 struct emitter_t
 {
-	emitter_t(u32 max_particles, GLuint tex);
+	emitter_t(u32 max_particles);
 	~emitter_t();
 
 	void update(f32 dt);
@@ -41,31 +41,31 @@ struct emitter_t
 	bool use_vel_curve{ false };
 	vec3 start_vel{ 0.f, 0.f, 0.f };
 	vec3 end_vel{ 0.f, 0.f, 0.f };
-	cubic_bezier_t vel_curve{};
+	cubic_bezier_t vel_curve{ cubic_bezier_t::linear(0.f, 1.f) };
 
 	bool use_random_size{ false };
 	bool use_size_curve{ false };
 	vec3 start_size{ 1.f, 1.f, 1.f };
 	vec3 end_size{ 1.f, 1.f, 1.f };
-	cubic_bezier_t size_curve{};
+	cubic_bezier_t size_curve{ cubic_bezier_t::linear(0.f, 1.f) };
 
 	bool use_random_rotation{ false };
 	bool use_rotation_curve{ false };
 	vec3 start_rotation{ 0.f, 0.f, 0.f };
 	vec3 end_rotation{ 0.f, 0.f, 0.f };
-	cubic_bezier_t rotation_curve{};
+	cubic_bezier_t rotation_curve{ cubic_bezier_t::linear(0.f, 1.f) };
 	
 	bool use_random_color{ false };
 	bool use_color_curve{ false };
 	vec4 start_color{ 1.f, 1.f, 1.f, 1.f };
 	vec4 end_color{ 1.f, 1.f, 1.f, 1.f };
-	cubic_bezier_t color_curve{};
+	cubic_bezier_t color_curve{ cubic_bezier_t::linear(0.f, 1.f) };
 
 	bool use_random_force{ false };
 	bool use_force_curve{ false };
 	vec3 start_force{ 0.0f, -9.8f, 0.0f };
 	vec3 end_force{ 0.f, -9.8f, 0.f };
-	cubic_bezier_t force_curve{};
+	cubic_bezier_t force_curve{ cubic_bezier_t::linear(0.f, 1.f) };
 
 	f32 spawn_time_rate{ 1.f };
 	f32 spawn_distance_rate{ 0.f };
@@ -77,6 +77,9 @@ struct emitter_t
 
 	particle_spawn_shape_t spawn_shape{};
 	vec3 spawn_size{ 1.f, 1.f, 1.f };
+
+	inline GLuint get_texture() const { return tex; }
+	inline void set_texture(GLuint tex) { this->tex = tex; }
 
 private:
 	batch_t batch;
