@@ -270,7 +270,7 @@ void batch_t::draw(GLenum mode) const
 		for (u32 i = 0; i <= drawcalls->idx_passes; i++)
 		{
 			const GLsizei count = i == drawcalls->idx_passes ? drawcalls->idx_count : IDX_MAX_VAL;
-			glDrawElements(mode, count, IDX_GL_TYPE, (void*)(i * IDX_RESET_VAL * sizeof(IDX_TYPE)));
+			glDrawElements(mode, count, IDX_GL_TYPE, (void*)((u64)i * IDX_RESET_VAL * sizeof(IDX_TYPE)));
 		}
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);

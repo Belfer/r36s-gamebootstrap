@@ -12,6 +12,7 @@ set(GAME_SRCS
     "src/device.cpp"
     "src/math.cpp"
     "src/batch.cpp"
+    "src/particles.cpp"
 )
 
 if(WIN32)
@@ -21,6 +22,6 @@ else()
 endif()
 
 add_executable(game ${GAME_SRCS})
-target_include_directories(game PRIVATE "include")
-target_link_libraries(game PRIVATE extern_deps)
-target_compile_definitions(game PRIVATE ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+target_include_directories(game PUBLIC "include")
+target_link_libraries(game PUBLIC extern_deps)
+target_compile_definitions(game PUBLIC ASSETS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/assets")

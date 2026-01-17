@@ -15,9 +15,9 @@ static bool begun{ false };
 struct vertex_t { vec3 pos{}; u32 col{ 0 }; };
 template <u32 Size> struct vertex_arr_t { vertex_t v[Size]{}; };
 
-static ring_buff_t<vertex_arr_t<1>, BATCH_SIZE> points_rb{};
-static ring_buff_t<vertex_arr_t<2>, BATCH_SIZE> lines_rb{};
-static ring_buff_t<vertex_arr_t<3>, BATCH_SIZE> tris_rb{};
+static ring_buff_t<vertex_arr_t<1>> points_rb{ BATCH_SIZE };
+static ring_buff_t<vertex_arr_t<2>> lines_rb{ BATCH_SIZE };
+static ring_buff_t<vertex_arr_t<3>> tris_rb{ BATCH_SIZE };
 
 static const char* vsrc = R"(
 #version 100
@@ -113,12 +113,12 @@ void debug_tri(const vec3& a, const vec3& b, const vec3& c, u32 color)
 	tris_rb.add(t);
 }
 
-template <typename T, u32 S>
-static void cpy_rb(const ring_buff_t<T, S>& rb, u8*& ptr)
+template <typename T>
+static void cpy_rb(const ring_buff_t<T>& rb, u8*& ptr)
 {
 	if (rb.count() != 0)
-		memcpy(ptr, &rb.data[0], rb.size() * sizeof(T));
-	ptr += rb.size() * sizeof(T);
+		memcpy(ptr, rb.get_data(), rb.get_capacity() * sizeof(T));
+	ptr += rb.get_capacity() * sizeof(T);
 }
 
 void debug_end()
@@ -140,29 +140,29 @@ void debug_end()
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-template <typename T, u32 S>
-static void draw_rb(const ring_buff_t<T, S>& rb, GLenum mode, GLint& start_offset)
+template <typename T>
+static void draw_rb(const ring_buff_t<T>& rb, GLenum mode, GLint& start_offset)
 {
 	const u32 size = sizeof(T) / sizeof(vertex_t);
 	if (rb.count() != 0)
 	{
-		if (rb.end > rb.start)
+		if (rb.get_end() > rb.get_start())
 		{
-			glDrawArrays(mode, start_offset + (size * rb.start), size * rb.count());
+			glDrawArrays(mode, start_offset + (size * rb.get_start()), size * rb.count());
 		}
 		else
 		{
 			GLint first[2]{};
 			GLsizei count[2]{};
-			first[0] = start_offset + (size * rb.start);
-			count[0] = size * (rb.size() - rb.start);
+			first[0] = start_offset + (size * rb.get_start());
+			count[0] = size * (rb.get_capacity() - rb.get_start());
 			first[1] = start_offset;
-			count[1] = size * rb.end;
+			count[1] = size * rb.get_end();
 			glMultiDrawArrays(mode, first, count, count[1] > 0 ? 2 : 1);
 		}
 	}
 
-	start_offset += size * rb.size();
+	start_offset += size * rb.get_capacity();
 }
 
 void debug_draw(const mat4& mvp)
