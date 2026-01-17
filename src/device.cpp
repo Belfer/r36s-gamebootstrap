@@ -1,5 +1,8 @@
 #include <device.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 static GLuint compile_shader(GLenum type, const char* src)
 {
     GLuint shader = glCreateShader(type);
@@ -48,4 +51,30 @@ GLuint create_buffer(GLenum type, GLenum usage, GLsizei size, void* data)
     glBufferData(type, size, data, usage);
     glBindBuffer(type, 0);
     return vbo;
+}
+
+GLuint load_texture(const char* path)
+{
+    int w, h, channels;
+    stbi_uc* pixels = stbi_load(path, &w, &h, &channels, 4);
+    if (!pixels)
+    {
+        LOG_ERROR("Failed to load texture: %s", path);
+        return 0;
+    }
+
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    stbi_image_free(pixels);
+    return tex;
 }
