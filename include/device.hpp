@@ -39,6 +39,10 @@
 #define GP_AXIS_RY		0x03
 #define GP_AXIS_COUNT	0x04
 
+#define glGenVertexArraysX (glGenVertexArrays ? glGenVertexArrays : glGenVertexArraysOES ? glGenVertexArraysOES : nullptr)
+#define glBindVertexArrayX (glBindVertexArray ? glBindVertexArray : glBindVertexArrayOES ? glBindVertexArrayOES : nullptr)
+#define glDeleteVertexArraysX (glDeleteVertexArrays ? glDeleteVertexArrays : glDeleteVertexArraysOES ? glDeleteVertexArraysOES : nullptr)
+
 struct config_t
 {
 	const char* display_title{ "Title" };
