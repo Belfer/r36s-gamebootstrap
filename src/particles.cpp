@@ -1,16 +1,32 @@
 #include <particles.hpp>
 #include <device.hpp>
 
+struct vertex_t
+{
+    vec3 pos{};
+    vec3 size{};
+    vec2 uv{};
+    u32 col{ 0 };
+};
+
 static const char* vsrc = R"(
 #version 100
-attribute vec4 aPos;
+attribute vec3 aPos;
+attribute vec3 aSize;
 attribute vec2 aUv;
 attribute vec4 aCol;
 uniform mat4 uMVP;
+uniform mat4 uView;
 varying vec2 vUv;
 varying vec4 vCol;
 void main() {
-    gl_Position = uMVP * vec4(aPos.xyz, 1.0);
+    vec3 right = vec3(uView[0][0], uView[1][0], uView[2][0]);
+    vec3 up = vec3(uView[0][1], uView[1][1], uView[2][1]);
+    vec2 co = aUv - 0.5;
+    float s = sin(aSize.z);
+    float c = cos(aSize.z);
+    vec3 offset = (co.x * c - co.y * s) * aSize.x * right + (co.x * s + co.y * c) * aSize.y * up;
+    gl_Position = uMVP * vec4(aPos + offset, 1.0);
     vUv = aUv;
     vCol = aCol;
 })";
@@ -26,7 +42,7 @@ void main() {
 })";
 
 emitter_t::emitter_t(u32 max_particles, GLuint tex)
-    : batch(sizeof(particle_t::vertex_t), max_particles, max_particles, 2)
+    : batch(sizeof(vertex_t), max_particles, max_particles, 2)
     , particles(max_particles)
     , max_particles(max_particles)
     , tex(tex)
@@ -38,16 +54,19 @@ emitter_t::emitter_t(u32 max_particles, GLuint tex)
 
     prg = create_program(vsrc, fsrc);
     const GLint apos_loc = glGetAttribLocation(prg, "aPos");
+    const GLint asize_loc = glGetAttribLocation(prg, "aSize");
     const GLint auv_loc = glGetAttribLocation(prg, "aUv");
     const GLint acol_loc = glGetAttribLocation(prg, "aCol");
 
-    const GLsizei stride = sizeof(particle_t::vertex_t);
+    const GLsizei stride = sizeof(vertex_t);
     glEnableVertexAttribArray(apos_loc);
-    glVertexAttribPointer(apos_loc, 4, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glVertexAttribPointer(apos_loc, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(asize_loc);
+    glVertexAttribPointer(asize_loc, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(f32)));
     glEnableVertexAttribArray(auv_loc);
-    glVertexAttribPointer(auv_loc, 2, GL_FLOAT, GL_FALSE, stride, (void*)(4 * sizeof(f32)));
+    glVertexAttribPointer(auv_loc, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(f32)));
     glEnableVertexAttribArray(acol_loc);
-    glVertexAttribPointer(acol_loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)(6 * sizeof(f32)));
+    glVertexAttribPointer(acol_loc, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)(8 * sizeof(f32)));
 
     glBindVertexArray(0);
 }
@@ -58,32 +77,20 @@ emitter_t::~emitter_t()
     glDeleteVertexArrays(1, &vao);
 }
 
-void emitter_t::add_quad(const vec3& pos, const vec3& size, const vec4& col)
+static void add_quad(batch_t& batch, const particle_t& p)
 {
-    const u32 c = vec4_to_rgba(col);
+    const u32 c{ vec4_to_rgba(p.col) };
+    const vec3 s{ p.size.x, p.size.y, radians(p.rot.z) };
     batch.begin();
-    particle_t::vertex_t v[4];
-    v[0].pos = vec4{ (-0.5f * size.x) + pos.x, (-0.5f * size.y) + pos.y, pos.z, 1.f};
-    v[0].uv = vec2{ 0.f, 0.f };
-    v[0].col = c;
-    v[1].pos = vec4{ (-0.5f * size.x) + pos.x, (0.5f * size.y) + pos.y, pos.z, 1.f };
-    v[1].uv = vec2{ 0.f, 1.f };
-    v[1].col = c;
-    v[2].pos = vec4{ (0.5f * size.x) + pos.x, (-0.5f * size.y) + pos.y, pos.z, 1.f };
-    v[2].uv = vec2{ 1.f, 0.f };
-    v[2].col = c;
-    v[3].pos = vec4{ (0.5f * size.x) + pos.x, (0.5f * size.y) + pos.y, pos.z, 1.f };
-    v[3].uv = vec2{ 1.f, 1.f };
-    v[3].col = c;
+    vertex_t v[4]
+    {
+        { p.pos, s, vec2{ 0.f, 0.f }, c },
+        { p.pos, s, vec2{ 0.f, 1.f }, c },
+        { p.pos, s, vec2{ 1.f, 0.f }, c },
+        { p.pos, s, vec2{ 1.f, 1.f }, c }
+    };
     batch.add_vertices((u8*)v, sizeof(v));
     batch.end();
-}
-
-static vec3 rand_in_sphere()
-{
-    f32 u = randf(), v = randf(), w = randf();
-    f32 r = cbrt(u), z = 1.f - 2.f * v, t = 2.f * pi() * w, s = sqrt(1.f - z * z);
-    return { r * s * cos(t), r * s * sin(t), r * z };
 }
 
 template <typename T>
@@ -100,13 +107,13 @@ void emitter_t::update(f32 dt)
     for (u32 i = 0; i < particles.count(); i++)
     {
         const u32 idx = (particles.get_start() + i) % particles.get_capacity();
-
         auto& p = particles[idx];
+
         p.life -= dt;
         if (p.life <= 0.f)
         {
             const u32 tidx = (particles.get_start() + dead_count) % particles.get_capacity();
-            swap(particles[idx], particles[tidx]);
+            if (idx != tidx) swap(particles[idx], particles[tidx]);
             dead_count++;
             continue;
         }
@@ -132,7 +139,7 @@ void emitter_t::update(f32 dt)
 
         p.pos += p.vel * dt;
 
-        add_quad(p.pos, p.size, p.col);
+        add_quad(batch, p);
     }
     particles.consume(dead_count);
 
@@ -152,7 +159,7 @@ void emitter_t::update(f32 dt)
         spawn_timer -= spawn_time_rate;
         if (particles.count() < max_particles)
         {
-            vec3 pos = rand_in_sphere();
+            vec3 pos = rand_inside_unit_sphere();
             pos = vec3{ pos.x * spawn_size.x, pos.y * spawn_size.y , pos.z * spawn_size.z };
 
             particle_t p{};
@@ -169,7 +176,7 @@ void emitter_t::update(f32 dt)
     }
 }
 
-void emitter_t::draw(const mat4& mvp)
+void emitter_t::draw(const mat4& mvp, const mat4& view)
 {
     batch.submit();
 
@@ -185,9 +192,11 @@ void emitter_t::draw(const mat4& mvp)
     glBindVertexArrayX(vao);
     glUseProgram(prg);
     const GLint umvp_loc = glGetUniformLocation(prg, "uMVP");
+    const GLint uview_loc = glGetUniformLocation(prg, "uView");
     const GLint utex_loc = glGetUniformLocation(prg, "uTex");
 
-    glUniformMatrix4fv(umvp_loc, 1, GL_FALSE, (f32*)&mvp);
+    glUniformMatrix4fv(umvp_loc, 1, GL_FALSE, mvp.data_ptr());
+    glUniformMatrix4fv(uview_loc, 1, GL_FALSE, view.data_ptr());
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex);
     glUniform1i(utex_loc, 0);

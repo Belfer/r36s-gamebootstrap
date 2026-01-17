@@ -13,8 +13,6 @@ struct particle_t
 	vec3 rot{};
 	vec4 col{};
 	vec3 force{};
-
-	struct vertex_t { vec4 pos{}; vec2 uv{}; u32 col{ 0 }; };
 };
 
 enum struct particle_spawn_shape_t
@@ -28,7 +26,7 @@ struct emitter_t
 	~emitter_t();
 
 	void update(f32 dt);
-	void draw(const mat4& mvp);
+	void draw(const mat4& mvp, const mat4& view);
 
 	u32 seed{ 0 };
 	vec3 origin{ 0.f, 0.f, 0.f };
@@ -79,9 +77,6 @@ struct emitter_t
 
 	particle_spawn_shape_t spawn_shape{};
 	vec3 spawn_size{ 1.f, 1.f, 1.f };
-
-private:
-	void add_quad(const vec3& pos, const vec3& size, const vec4& col);
 
 private:
 	batch_t batch;

@@ -41,6 +41,11 @@ int main(int argc, char** args)
     emitter.start_size = vec3{ 2.f, 2.f, 2.f };
     emitter.end_size = vec3{ 0.2f, 0.2f, 0.2f };
 
+    emitter.use_rotation_curve = true;
+    emitter.rotation_curve = cubic_bezier_t::ease(vec2{ 0.0f, 0.0f }, vec2{ 1.0f, 1.0f });
+    emitter.start_rotation = vec3{ 0.f, 0.f, 0.f };
+    emitter.end_rotation = vec3{ 0.f, 0.f, 10.f };
+
     emitter.use_color_curve = true;
     emitter.color_curve = cubic_bezier_t::ease(vec2{ 0.0f, 0.0f }, vec2{ 1.0f, 1.0f });
     emitter.start_color = vec4{ 0.1f, 0.5f, 0.8f, 1.f };
@@ -80,6 +85,9 @@ int main(int argc, char** args)
 
         vec2 ljoy{ get_axis_value(GP_AXIS_LX), -get_axis_value(GP_AXIS_LY) };
         vec2 rjoy{ get_axis_value(GP_AXIS_RX), -get_axis_value(GP_AXIS_RY) };
+        if (dot(ljoy, ljoy) < 0.1f) ljoy = vec2{};
+        if (dot(rjoy, rjoy) < 0.1f) rjoy = vec2{};
+
         f32 move = 0.f;
         if (is_button_pressed(GP_BTN_L1)) move -= 1.f;
         if (is_button_pressed(GP_BTN_R1)) move += 1.f;
@@ -99,7 +107,7 @@ int main(int argc, char** args)
         emitter.update(dt);
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-        emitter.draw(mvp);
+        emitter.draw(mvp, view);
 
         end_frame();
     }
