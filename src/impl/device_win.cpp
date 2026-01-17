@@ -161,6 +161,31 @@ static void audio_shutdown()
 }
 
 // Public API
+static void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+{
+    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+}
+
+bool gl_debug_init()
+{
+    LOG_INFO("GL Vendor: %s", glGetString(GL_VENDOR));
+    LOG_INFO("GL Renderer: %s", glGetString(GL_RENDERER));
+    LOG_INFO("GL Version: %s", glGetString(GL_VERSION));
+    LOG_INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    GLint extensionCount = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    LOG_INFO("GL Extensions:");
+    for (GLint i = 0; i < extensionCount; ++i)
+        LOG_INFO("  %s", (const char*)glGetStringi(GL_EXTENSIONS, i));
+
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(gl_debug_callback, nullptr);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
+
+    return true;
+}
+
 bool init(const config_t& config)
 {
     if (!display_init(config.display_width, config.display_height, config.display_title, config.display_vsync))
@@ -169,6 +194,8 @@ bool init(const config_t& config)
     //if (!audio_init(config.audio_sample_rate, config.audio_channels, config.audio_frame_count,
     //                config.audio_callback, config.audio_userdata))
     //    return false;
+
+    gl_debug_init();
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
