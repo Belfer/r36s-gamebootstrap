@@ -11,6 +11,7 @@ set(GAME_SRCS
     "src/debug.cpp"
     "src/device.cpp"
     "src/math.cpp"
+    "src/batch.cpp"
 )
 
 if(WIN32)

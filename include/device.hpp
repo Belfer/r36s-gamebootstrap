@@ -42,6 +42,10 @@
 #define glGenVertexArraysX (glGenVertexArrays ? glGenVertexArrays : glGenVertexArraysOES ? glGenVertexArraysOES : nullptr)
 #define glBindVertexArrayX (glBindVertexArray ? glBindVertexArray : glBindVertexArrayOES ? glBindVertexArrayOES : nullptr)
 #define glDeleteVertexArraysX (glDeleteVertexArrays ? glDeleteVertexArrays : glDeleteVertexArraysOES ? glDeleteVertexArraysOES : nullptr)
+#define glBufferStorageX (glBufferStorage ? glBufferStorage : glBufferStorageEXT ? glBufferStorageEXT : nullptr)
+#define glMapBufferRangeX (glMapBufferRange ? glMapBufferRange : glMapBufferRangeEXT ? glMapBufferRangeEXT : nullptr)
+#define glUnmapBufferX (glUnmapBuffer ? glUnmapBuffer : glUnmapBufferOES ? glUnmapBufferOES : nullptr)
+#define glMultiDrawArraysX (glMultiDrawArrays ? glMultiDrawArrays : glMultiDrawArraysEXT ? glMultiDrawArraysEXT : nullptr)
 
 struct config_t
 {

@@ -167,13 +167,13 @@ struct mat4
 
 inline f32 eps() { return 1e-6f; }
 
-inline bool is_zero(f32 v) { return abs(v) < eps(); }
-inline bool is_zero(const vec2& v) { return is_zero(v.x) && is_zero(v.y); }
-inline bool is_zero(const vec3& v) { return is_zero(v.x) && is_zero(v.y) && is_zero(v.z); }
-inline bool is_zero(const vec4& v) { return is_zero(v.x) && is_zero(v.y) && is_zero(v.z) && is_zero(v.w); }
-inline bool is_zero(const mat2& m) { return is_zero(m.data[0]) && is_zero(m.data[1]); }
-inline bool is_zero(const mat3& m) { return is_zero(m.data[0]) && is_zero(m.data[1]) && is_zero(m.data[2]); }
-inline bool is_zero(const mat4& m) { return is_zero(m.data[0]) && is_zero(m.data[1]) && is_zero(m.data[2]) && is_zero(m.data[3]); }
+inline bool is_zero(f32 v, f32 e = eps()) { return fabs(v) < e; }
+inline bool is_zero(const vec2& v, f32 e = eps()) { return is_zero(v.x, e) && is_zero(v.y, e); }
+inline bool is_zero(const vec3& v, f32 e = eps()) { return is_zero(v.x, e) && is_zero(v.y, e) && is_zero(v.z, e); }
+inline bool is_zero(const vec4& v, f32 e = eps()) { return is_zero(v.x, e) && is_zero(v.y, e) && is_zero(v.z, e) && is_zero(v.w, e); }
+inline bool is_zero(const mat2& m, f32 e = eps()) { return is_zero(m.data[0], e) && is_zero(m.data[1], e); }
+inline bool is_zero(const mat3& m, f32 e = eps()) { return is_zero(m.data[0], e) && is_zero(m.data[1], e) && is_zero(m.data[2], e); }
+inline bool is_zero(const mat4& m, f32 e = eps()) { return is_zero(m.data[0], e) && is_zero(m.data[1], e) && is_zero(m.data[2], e) && is_zero(m.data[3], e); }
 
 inline f32 clamp(f32 v, f32 min, f32 max) { return fmin(fmax(v, min), max); }
 inline vec2 clamp(const vec2& v, f32 min, f32 max) { return { clamp(v.x, min, max), clamp(v.y, min, max) }; }
