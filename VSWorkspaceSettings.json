@@ -1,0 +1,7 @@
+{
+  "CMakeTargetsViewExcludedItems": [
+    "CMakeFolder:imgui/examples",
+    "CMakeTarget:example_win32_directx11",
+    "CMakeTarget:example_glfw_opengl3"
+  ]
+}
