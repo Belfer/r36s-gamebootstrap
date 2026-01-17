@@ -3,12 +3,28 @@
 #include <types.hpp>
 #include <cmath>
 
+inline f32 pi() { return 3.1415927f; }
+inline f32 two_pi() { return 6.2831855f; }
+inline f32 half_pi() { return 1.5707964f; }
+inline f32 inv_pi() { return 0.31830987f; }
+inline f32 eps() { return 1e-6f; }
+inline bool near_zero(f32 v, f32 e = eps()) { return fabs(v) < e; }
+inline bool near_eq(f32 a, f32 b, f32 e = eps()) { return fabs(a - b) < e * fmaxf(1.0f, fmaxf(fabs(a), fabs(b))); }
+inline f32 clamp(f32 v, f32 min, f32 max) { return fmin(fmax(v, min), max); }
+inline f32 lerp(f32 a, f32 b, f32 t) { return a + t * (b - a); }
+
+inline f32 randf() { return (f32)rand() / (f32)RAND_MAX; }
+
+inline f32 radians(f32 v) { return v * 0.017453292519943295f; }
+
 struct vec2
 {
 	vec2() : data{ 0, 0 } {}
 	vec2(f32 x, f32 y) : data{ x, y } {}
 	vec2(const vec2& v) : data{ v.x, v.y } {}
 	union { struct { f32 x, y; }; f32 data[2]; };
+	inline f32* data_ptr() { return &data[0]; }
+	inline const f32* data_ptr() const { return &data[0]; }
 	inline f32& operator[](u8 i) { return data[i]; }
 	inline const f32& operator[](u8 i) const { return data[i]; }
 	inline vec2 operator+(const vec2& v) const { return { x + v.x, y + v.y }; }
@@ -28,6 +44,8 @@ struct vec3
 	vec3(f32 x, f32 y, f32 z) : data{ x, y, z } {}
 	vec3(const vec3& v) : data{ v.x, v.y, v.z } {}
 	union { struct { f32 x, y, z; }; f32 data[3]; };
+	inline f32* data_ptr() { return &data[0]; }
+	inline const f32* data_ptr() const { return &data[0]; }
 	inline f32& operator[](u8 i) { return data[i]; }
 	inline const f32& operator[](u8 i) const { return data[i]; }
 	inline vec3 operator+(const vec3& v) const { return { x + v.x, y + v.y, z + v.z }; }
@@ -47,6 +65,8 @@ struct vec4
 	vec4(f32 x, f32 y, f32 z, f32 w) : data{ x, y, z, w } {}
 	vec4(const vec4& v) : data{ v.x, v.y, v.z, v.w } {}
 	union { struct { f32 x, y, z, w; }; f32 data[4]; };
+	inline f32* data_ptr() { return &data[0]; }
+	inline const f32* data_ptr() const { return &data[0]; }
 	inline f32& operator[](u8 i) { return data[i]; }
 	inline const f32& operator[](u8 i) const { return data[i]; }
 	inline vec4 operator+(const vec4& v) const { return { x + v.x, y + v.y, z + v.z, w + v.w }; }
@@ -66,6 +86,8 @@ struct mat2
 	mat2(const vec2& x, const vec2& y) : data{ x, y } {}
 	mat2(const mat2& m) : data{ m.data[0], m.data[1] } {}
 	vec2 data[2];
+	inline f32* data_ptr() { return &data[0].x; }
+	inline const f32* data_ptr() const { return &data[0].x; }
 	inline vec2& operator[](u8 i) { return data[i]; }
 	inline const vec2& operator[](u8 i) const { return data[i]; }
 	inline mat2 operator+(const mat2& m) const { return { data[0] + m.data[0], data[1] + m.data[1] }; }
@@ -101,6 +123,8 @@ struct mat3
 	mat3(const vec3& x, const vec3& y, const vec3& z) : data{ x, y, z } {}
 	mat3(const mat3& m) : data{ m.data[0], m.data[1], m.data[2] } {}
 	vec3 data[3];
+	inline f32* data_ptr() { return &data[0].x; }
+	inline const f32* data_ptr() const { return &data[0].x; }
 	inline vec3& operator[](u8 i) { return data[i]; }
 	inline const vec3& operator[](u8 i) const { return data[i]; }
 	inline mat3 operator+(const mat3& m) const { return { data[0] + m.data[0], data[1] + m.data[1], data[2] + m.data[2] }; }
@@ -136,6 +160,8 @@ struct mat4
 	mat4(const vec4& x, const vec4& y, const vec4& z, const vec4& w) : data{ x, y, z, w } {}
 	mat4(const mat4& m) : data{ m.data[0], m.data[1], m.data[2], m.data[3] } {}
 	vec4 data[4];
+	inline f32* data_ptr() { return &data[0].x; }
+	inline const f32* data_ptr() const { return &data[0].x; }
 	inline vec4& operator[](u8 i) { return data[i]; }
 	inline const vec4& operator[](u8 i) const { return data[i]; }
 	inline mat4 operator+(const mat4& m) const { return { data[0] + m.data[0], data[1] + m.data[1], data[2] + m.data[2], data[3] + m.data[3] }; }
@@ -165,20 +191,58 @@ struct mat4
 	static mat4 identity() { return mat4{ {1,0,0,0}, {0,1,0,0}, {0,0,1,0}, {0,0,0,1} }; }
 };
 
-inline f32 eps() { return 1e-6f; }
+struct cubic_bezier_t
+{
+	cubic_bezier_t() {}
+	cubic_bezier_t(const vec2& a1, const vec2& a2, const vec2& b1, const vec2& b2)
+		: a1(a1), a2(a2), b1(b1), b2(b2)
+	{
+	}
 
-inline bool is_zero(f32 v) { return abs(v) < eps(); }
-inline bool is_zero(const vec2& v) { return is_zero(v.x) && is_zero(v.y); }
-inline bool is_zero(const vec3& v) { return is_zero(v.x) && is_zero(v.y) && is_zero(v.z); }
-inline bool is_zero(const vec4& v) { return is_zero(v.x) && is_zero(v.y) && is_zero(v.z) && is_zero(v.w); }
-inline bool is_zero(const mat2& m) { return is_zero(m.data[0]) && is_zero(m.data[1]); }
-inline bool is_zero(const mat3& m) { return is_zero(m.data[0]) && is_zero(m.data[1]) && is_zero(m.data[2]); }
-inline bool is_zero(const mat4& m) { return is_zero(m.data[0]) && is_zero(m.data[1]) && is_zero(m.data[2]) && is_zero(m.data[3]); }
+	vec2 a1{}, a2{}, b1{}, b2{};
 
-inline f32 clamp(f32 v, f32 min, f32 max) { return fmin(fmax(v, min), max); }
+	inline vec2 eval(f32 t) const
+	{
+		t = clamp(t, 0.f, 1.f);
+		const f32 u = 1.f - t;
+		const f32 tt = t * t;
+		const f32 uu = u * u;
+		const f32 uuu = uu * u;
+		const f32 ttt = tt * t;
+		const f32 x = uuu * a1.x + 3 * uu * t * a2.x + 3 * u * tt * b1.x + ttt * b2.x;
+		const f32 y = uuu * a1.y + 3 * uu * t * a2.y + 3 * u * tt * b1.y + ttt * b2.y;
+		return vec2{ x, y };
+	};
+
+	static cubic_bezier_t linear(f32 a, f32 b)
+	{
+		return cubic_bezier_t{ { 0.f, a }, { 1.f / 3.f, a + (b - a) / 3.f }, { 2.f / 3.f, a + 2.f * (b - a) / 3.f }, { 1.f, b } };
+	}
+
+	static cubic_bezier_t ease(const vec2& a, const vec2& b)
+	{
+		return cubic_bezier_t{ { 0.f, 0.f }, a, b, { 1.f, 1.f } };
+	}
+};
+
+inline bool near_zero(const vec2& v, f32 e = eps()) { return near_zero(v.x, e) && near_zero(v.y, e); }
+inline bool near_zero(const vec3& v, f32 e = eps()) { return near_zero(v.x, e) && near_zero(v.y, e) && near_zero(v.z, e); }
+inline bool near_zero(const vec4& v, f32 e = eps()) { return near_zero(v.x, e) && near_zero(v.y, e) && near_zero(v.z, e) && near_zero(v.w, e); }
+inline bool near_zero(const mat2& m, f32 e = eps()) { return near_zero(m.data[0], e) && near_zero(m.data[1], e); }
+inline bool near_zero(const mat3& m, f32 e = eps()) { return near_zero(m.data[0], e) && near_zero(m.data[1], e) && near_zero(m.data[2], e); }
+inline bool near_zero(const mat4& m, f32 e = eps()) { return near_zero(m.data[0], e) && near_zero(m.data[1], e) && near_zero(m.data[2], e) && near_zero(m.data[3], e); }
+
 inline vec2 clamp(const vec2& v, f32 min, f32 max) { return { clamp(v.x, min, max), clamp(v.y, min, max) }; }
 inline vec3 clamp(const vec3& v, f32 min, f32 max) { return { clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max) }; }
 inline vec4 clamp(const vec4& v, f32 min, f32 max) { return { clamp(v.x, min, max), clamp(v.y, min, max), clamp(v.z, min, max), clamp(v.w, min, max) }; }
+
+inline vec2 lerp(const vec2& a, const vec2& b, f32 t) { return { lerp(a.x, b.x, t), lerp(a.y, b.y, t) }; }
+inline vec3 lerp(const vec3& a, const vec3& b, f32 t) { return { lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t) }; }
+inline vec4 lerp(const vec4& a, const vec4& b, f32 t) { return { lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t), lerp(a.w, b.w, t) }; }
+
+inline vec2 lerp(const vec2& a, const vec2& b, const vec2& t) { return { lerp(a.x, b.x, t.x), lerp(a.y, b.y, t.y) }; }
+inline vec3 lerp(const vec3& a, const vec3& b, const vec3& t) { return { lerp(a.x, b.x, t.x), lerp(a.y, b.y, t.y), lerp(a.z, b.z, t.z) }; }
+inline vec4 lerp(const vec4& a, const vec4& b, const vec4& t) { return { lerp(a.x, b.x, t.x), lerp(a.y, b.y, t.y), lerp(a.z, b.z, t.z), lerp(a.w, b.w, t.w) }; }
 
 inline f32 dot(const vec2& a, const vec2& b) { return a.x * b.x + a.y * b.y; }
 inline f32 dot(const vec3& a, const vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
@@ -194,10 +258,25 @@ inline vec4 normalized(const vec4& v) { return v / length(v); }
 
 inline vec3 cross(const vec3& a, const vec3& b) { return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x }; }
 
-inline f32 randf() { return (f32)rand() / (f32)RAND_MAX; }
-inline vec3 randdir() { return normalized(vec3{ randf() * 2.f - 1.f, randf() * 2.f - 1.f, randf() * 2.f - 1.f }); }
+inline vec4 rgba_to_vec4(u32 c) { return vec4{ (c & 0xFF) / 255.f, ((c >> 8) & 0xFF) / 255.f, ((c >> 16) & 0xFF) / 255.f, ((c >> 24) & 0xFF) / 255.f }; }
+inline u32 vec4_to_rgba(const vec4& c) { return (u32(clamp(c.w, 0.f, 1.f) * 255.f) << 24) | (u32(clamp(c.z, 0.f, 1.f) * 255.f) << 16) | (u32(clamp(c.y, 0.f, 1.f) * 255.f) << 8) | (u32(clamp(c.x, 0.f, 1.f) * 255.f)); }
 
-inline f32 radians(f32 v) { return v * 0.017453292519943295f; }
+inline vec3 rand_on_unit_sphere()
+{
+	const f32 u = randf();
+	const f32 v = randf();
+	const f32 z = 1.0f - 2.0f * u;
+	const f32 t = 2.0f * pi() * v;
+	const f32 s = sqrt(1.0f - z * z);
+	return { s * cos(t), s * sin(t), z };
+}
+
+inline vec3 rand_inside_unit_sphere()
+{
+	const f32 u = randf(), v = randf(), w = randf();
+	const f32 r = cbrt(u), z = 1.f - 2.f * v, t = 2.f * pi() * w, s = sqrt(1.f - z * z);
+	return { r * s * cos(t), r * s * sin(t), r * z };
+}
 
 mat4 lookat(const vec3& eye, const vec3& forward, const vec3& up);
 mat4 orthographic(f32 left, f32 right, f32 top, f32 bottom, f32 near, f32 far);
