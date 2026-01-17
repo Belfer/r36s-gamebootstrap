@@ -14,9 +14,15 @@
 // Display
 static GLFWwindow* display_window = nullptr;
 
-static bool display_init(i32 width, i32 height, const char* title)
+static void glfw_error_callback(int error, const char* description)
+{
+    LOG_ERROR("GLFW Error %d: %s", error, description);
+}
+
+static bool display_init(i32 width, i32 height, const char* title, bool vsync)
 {
     LOG_INFO("Initializing GLFW...");
+    glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         LOG_ERROR("Failed to initialize GLFW");
 
@@ -29,6 +35,7 @@ static bool display_init(i32 width, i32 height, const char* title)
     ASSERT(display_window != nullptr, "Failed to create GLFW window");
 
     glfwMakeContextCurrent(display_window);
+    glfwSwapInterval(vsync ? 1 : 0);
 
     LOG_INFO("Initializing GLAD...");
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
@@ -149,14 +156,41 @@ static void audio_shutdown()
 }
 
 // Public API
+static void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+{
+    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+}
+
+bool gl_debug_init()
+{
+    LOG_INFO("GL Vendor: %s", glGetString(GL_VENDOR));
+    LOG_INFO("GL Renderer: %s", glGetString(GL_RENDERER));
+    LOG_INFO("GL Version: %s", glGetString(GL_VERSION));
+    LOG_INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    GLint extensionCount = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    LOG_INFO("GL Extensions:");
+    for (GLint i = 0; i < extensionCount; ++i)
+        LOG_INFO("  %s", (const char*)glGetStringi(GL_EXTENSIONS, i));
+
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(gl_debug_callback, nullptr);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
+
+    return true;
+}
+
 bool init(const config_t& config)
 {
-    if (!display_init(config.display_width, config.display_height, config.display_title))
+    if (!display_init(config.display_width, config.display_height, config.display_title, config.display_vsync))
         return false;
 
     //if (!audio_init(config.audio_sample_rate, config.audio_channels, config.audio_frame_count,
     //                config.audio_callback, config.audio_userdata))
     //    return false;
+
+    gl_debug_init();
 
     LOG_INFO("Device initialized successfully.");
     return true;
