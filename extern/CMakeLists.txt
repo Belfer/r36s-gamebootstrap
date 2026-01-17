@@ -1,6 +1,3 @@
-set(GAME_INCLUDE_DIRS)
-set(GAME_LIBRARIES)
-
 add_library(extern_deps INTERFACE)
 
 add_library(glad STATIC "glad/src/glad.c")
