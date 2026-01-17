@@ -74,10 +74,10 @@ i32 main(i32 argc, char** args)
         camrot += look * dt * 100.f;
         camrot.y = clamp(camrot.y, -89.0f, 89.f);
         const mat4 view = lookat(campos, direction_from_yaw_pitch(radians(camrot.x), radians(camrot.y)), vec3{ 0.f, 1.f, 0.f });
-        const vec3 right{ view[0].x, view[0].y, view[0].z };
-        const vec3 up{ view[1].x, view[1].y, view[1].z };
-        const vec3 forward{ view[2].x, view[2].y, view[2].z };
-        campos += (right * move.x) + (up * move.y) + (forward * move.z);
+        //const vec3 right{ view[0].x, view[0].y, view[0].z };
+        //const vec3 up{ view[1].x, view[1].y, view[1].z };
+        //const vec3 forward{ view[2].x, view[2].y, view[2].z };
+        //campos += (right * move.x) + (up * move.y) + (forward * move.z);
         const mat4 vp = proj * view;
         const mat4 ivp = inverse(vp);
 
