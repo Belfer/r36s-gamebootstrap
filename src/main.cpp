@@ -20,7 +20,7 @@ i32 main(i32 argc, char** args)
     config.audio_sample_rate = 44100;
     config.audio_channels = 2;
     config.audio_frame_count = 256;
-    config.audio_callback = [](i16*, i32, void*) {};
+    config.audio_callback = [](i16*, i32, void*){};
     config.audio_userdata = nullptr;
 
     if (!init(config) || !sky_init())

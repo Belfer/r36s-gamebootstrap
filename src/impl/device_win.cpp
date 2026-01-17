@@ -11,17 +11,22 @@
 #include <cstring>
 #include <cassert>
 
+#include <imgui.h>
+#include <backends/imgui_impl_glfw.h>
+#include <backends/imgui_impl_opengl3.h>
+
 // Display
 static GLFWwindow* display_window = nullptr;
 
-void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+static void glfw_error_callback(int error, const char* description)
 {
-    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+    LOG_ERROR("GLFW Error %d: %s", error, description);
 }
 
-static bool display_init(i32 width, i32 height, const char* title)
+static bool display_init(i32 width, i32 height, const char* title, bool vsync)
 {
     LOG_INFO("Initializing GLFW...");
+    glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         LOG_ERROR("Failed to initialize GLFW");
 
@@ -30,20 +35,17 @@ static bool display_init(i32 width, i32 height, const char* title)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     LOG_INFO("Creating GLFW window...");
-    display_window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    const f32 main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
+    display_window = glfwCreateWindow((i32)(width * main_scale), (i32)(height * main_scale), title, nullptr, nullptr);
     ASSERT(display_window != nullptr, "Failed to create GLFW window");
 
     glfwMakeContextCurrent(display_window);
+    glfwSwapInterval(vsync ? 1 : 0);
 
     LOG_INFO("Initializing GLAD...");
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
         LOG_ERROR("Failed to initialize GLAD");
-
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    glDebugMessageCallback(gl_debug_callback, nullptr);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
-
+    
     LOG_INFO("GLFW window and OpenGL context initialized successfully.");
     return true;
 }
@@ -159,14 +161,75 @@ static void audio_shutdown()
 }
 
 // Public API
+static void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+{
+    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+}
+
+bool gl_debug_init()
+{
+    LOG_INFO("GL Vendor: %s", glGetString(GL_VENDOR));
+    LOG_INFO("GL Renderer: %s", glGetString(GL_RENDERER));
+    LOG_INFO("GL Version: %s", glGetString(GL_VERSION));
+    LOG_INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+    GLint extensionCount = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+    LOG_INFO("GL Extensions:");
+    for (GLint i = 0; i < extensionCount; ++i)
+        LOG_INFO("  %s", (const char*)glGetStringi(GL_EXTENSIONS, i));
+
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(gl_debug_callback, nullptr);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
+
+    return true;
+}
+
 bool init(const config_t& config)
 {
-    if (!display_init(config.display_width, config.display_height, config.display_title))
+    if (!display_init(config.display_width, config.display_height, config.display_title, config.display_vsync))
         return false;
 
     //if (!audio_init(config.audio_sample_rate, config.audio_channels, config.audio_frame_count,
     //                config.audio_callback, config.audio_userdata))
     //    return false;
+
+    gl_debug_init();
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+    //io.ConfigViewportsNoAutoMerge = true;
+    //io.ConfigViewportsNoTaskBarIcon = true;
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsLight();
+
+    // Setup scaling
+    ImGuiStyle& style = ImGui::GetStyle();
+    const f32 main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
+    style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
+    style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
+#if GLFW_VERSION_MAJOR >= 3 && GLFW_VERSION_MINOR >= 3
+    io.ConfigDpiScaleFonts = true;          // [Experimental] Automatically overwrite style.FontScaleDpi in Begin() when Monitor DPI changes. This will scale fonts but _NOT_ scale sizes/padding for now.
+    io.ConfigDpiScaleViewports = true;      // [Experimental] Scale Dear ImGui and Platform Windows when Monitor DPI changes.
+#endif
+
+    // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
+    ImGui_ImplGlfw_InitForOpenGL(display_window, true);
+    ImGui_ImplOpenGL3_Init("#version 100");
 
     LOG_INFO("Device initialized successfully.");
     return true;
@@ -174,6 +237,10 @@ bool init(const config_t& config)
 
 void shutdown()
 {
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
     display_shutdown();
     //audio_shutdown();
 
@@ -182,12 +249,43 @@ void shutdown()
 
 bool begin_frame()
 {
-    return !glfwWindowShouldClose(display_window);
+    if (glfwWindowShouldClose(display_window))
+        return false;
+
+    glfwPollEvents();
+    //if (glfwGetWindowAttrib(display_window, GLFW_ICONIFIED) != 0)
+    //{
+    //    ImGui_ImplGlfw_Sleep(10);
+    //    continue;
+    //}
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    return true;
 }
 
 void end_frame()
 {
-    glfwPollEvents();
+    ImGui::Render();
+    i32 display_w, display_h;
+    glfwGetFramebufferSize(display_window, &display_w, &display_h);
+    glViewport(0, 0, display_w, display_h);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    // Update and Render additional Platform Windows
+    // (Platform functions may change the current OpenGL context, so we save/restore it to make it easier to paste this code elsewhere.
+    //  For this specific demo app we could also call glfwMakeContextCurrent(window) directly)
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        GLFWwindow* backup_current_context = glfwGetCurrentContext();
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+        glfwMakeContextCurrent(backup_current_context);
+    }
+
     glfwSwapBuffers(display_window);
 }
 
