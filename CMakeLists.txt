@@ -10,6 +10,7 @@ set(GAME_SRCS
     "src/main.cpp"
     "src/device.cpp"
     "src/math.cpp"
+    "src/sky.cpp"
 )
 
 if(WIN32)

@@ -14,6 +14,11 @@
 // Display
 static GLFWwindow* display_window = nullptr;
 
+void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+{
+    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
+}
+
 static bool display_init(i32 width, i32 height, const char* title)
 {
     LOG_INFO("Initializing GLFW...");
@@ -33,6 +38,11 @@ static bool display_init(i32 width, i32 height, const char* title)
     LOG_INFO("Initializing GLAD...");
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
         LOG_ERROR("Failed to initialize GLAD");
+
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(gl_debug_callback, nullptr);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
 
     LOG_INFO("GLFW window and OpenGL context initialized successfully.");
     return true;
