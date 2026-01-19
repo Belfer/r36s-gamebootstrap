@@ -78,3 +78,4 @@ f32 get_axis_value(u8 axis);
 // OpenGL utilities
 GLuint create_program(const char* vsrc, const char* fsrc);
 GLuint create_buffer(GLenum type, GLenum usage, GLsizei size, void* data);
+GLuint load_texture(const char* path);

@@ -84,11 +84,6 @@ void main() {
 	gl_FragColor = vCol;
 })";
 
-void APIENTRY gl_debug_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
-{
-    LOG_WARN("OpenGL Debug Message:\n  Source: 0x%x\n  Type: 0x%x\n  ID: %u\n  Severity: 0x%x\n  Message: %s\n", source, type, id, severity, message);
-}
-
 int main(int argc, char** args)
 {
     config_t config{};
@@ -104,21 +99,6 @@ int main(int argc, char** args)
 
 	if (!init(config))
 		return -1;
-
-    LOG_INFO("GL Vendor: %s", glGetString(GL_VENDOR));
-    LOG_INFO("GL Renderer: %s", glGetString(GL_RENDERER));
-    LOG_INFO("GL Version: %s", glGetString(GL_VERSION));
-    LOG_INFO("GL Shading Language Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
-    GLint extensionCount = 0;
-    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
-    LOG_INFO("GL Extensions:");
-    for (GLint i = 0; i < extensionCount; ++i)
-        LOG_INFO("  %s", (const char*)glGetStringi(GL_EXTENSIONS, i));
-
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-    glDebugMessageCallback(gl_debug_callback, nullptr);
-    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
 
     batch_t batch{ sizeof(vertex_t), MAX_TRAILS * TRAIL_LENGTH * 2, MAX_TRAILS, 2 };
 
@@ -155,14 +135,13 @@ int main(int argc, char** args)
     f32 fps_timer = 0.f;
     i32 fps_frames = 0;
 
-    f64 last_time = get_time();
+    const f32 min_dt = 1.f / 10.f;
+    f64 ts = get_time();
 	while (begin_frame())
 	{
         if (is_button_pressed(GP_BTN_START)) close();
-
-        f64 curr_time = get_time();
-        const f32 dt = (f32)(curr_time - last_time);
-        last_time = curr_time;
+        const f32 elapsed = (f32)(get_time() - ts); ts = get_time();
+        const f32 dt = fmin(elapsed, min_dt);
 
         time += dt;
         fps_timer += dt;
