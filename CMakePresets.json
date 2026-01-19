@@ -17,7 +17,11 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "cl.exe",
-        "CMAKE_CXX_COMPILER": "cl.exe"
+        "CMAKE_CXX_COMPILER": "cl.exe",
+        "GLFW_BUILD_EXAMPLES": false,
+        "GLFW_BUILD_TESTS": false,
+        "GLFW_BUILD_DOCS": false,
+        "GLFW_INSTALL": false
       },
       "condition": {
         "type": "equals",
