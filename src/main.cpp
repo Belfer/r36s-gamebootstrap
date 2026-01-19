@@ -36,7 +36,7 @@ struct trail_t
             u32 prev_idx = (idx == 0) ? TRAIL_LENGTH - 1 : idx - 1;
 
             const vec2 a2b = trail[idx] - trail[prev_idx];
-            if (!is_zero(dot(a2b, a2b)))
+            if (!near_zero(dot(a2b, a2b)))
             {
                 auto& va = vertices[vert_count];
                 auto& vb = vertices[vert_count + 1];
