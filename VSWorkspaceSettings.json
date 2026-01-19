@@ -1,0 +1,7 @@
+{
+  "CMakeTargetsViewExcludedItems": [
+    "CMakeFolder:glfw/examples",
+    "CMakeFolder:glfw/tests",
+    "CMakeFolder:glfw/deps"
+  ]
+}
